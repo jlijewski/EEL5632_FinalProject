@@ -1,0 +1,11 @@
+<configuration>
+    <input>
+        <net-file value="5Lane_highway.net.xml"/>
+        <route-files value="5Lane_traffic.rou.xml"/>
+        <gui-settings-file value="highway.view.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        
+    </time>
+</configuration>

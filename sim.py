@@ -15,7 +15,7 @@ import traci # Static network information (such as reading and analyzing network
 # Step 4: Define Sumo configuration
 Sumo_config = [
     'sumo-gui',
-    '-c', 'Traci.sumocfg',
+    '-c', 'highway/highway.sumocfg',
     '--step-length', '0.05',
     '--delay', '1000',
     '--lateral-resolution', '0.1'
@@ -34,11 +34,12 @@ total_speed = 0
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep() # Move simulation forward 1 step
     # Here you can decide what to do with simulation data at each step
-    if 'veh1' in traci.vehicle.getIDList():
-        vehicle_speed = traci.vehicle.getSpeed('veh1')
-        total_speed = total_speed + vehicle_speed
+    # for veh1 in traci.vehicle.getIDList():
+    #     vehicle_speed = traci.vehicle.getSpeed()
+    #     total_speed = total_speed + vehicle_speed
+    print(traci.vehicle.getIDList())
     # step_count = step_count + 1
-    print(f"Vehicle speed: {vehicle_speed} m/s")
+    #print(f"Vehicle speed: {vehicle_speed} m/s")
 
 # Step 9: Close connection between SUMO and Traci
 traci.close()

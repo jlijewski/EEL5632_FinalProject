@@ -9,6 +9,7 @@ class Vehicle:
         self.lane = lane
         self.lanePos = lanePos
         self.length = length
+        self.targetLane = -1
         print(f"Created: {name}")
 
     def __del__(self):

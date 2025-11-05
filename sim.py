@@ -2,6 +2,8 @@
 import os # Module provides functions to handle file paths, directories, environment variables
 import sys # Module provides access to Python-specific system parameters and functions
 
+from vehicle import Vehicle
+
 # Step 2: Establish path to SUMO (SUMO_HOME)
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -15,7 +17,7 @@ import traci # Static network information (such as reading and analyzing network
 # Step 4: Define Sumo configuration
 Sumo_config = [
     'sumo-gui',
-    '-c', 'Traci.sumocfg',
+    '-c', 'highway/highway.sumocfg',
     '--step-length', '0.05',
     '--delay', '1000',
     '--lateral-resolution', '0.1'
@@ -29,16 +31,21 @@ vehicle_speed = 0
 total_speed = 0
 
 # Step 7: Define Functions
+vehicles = {}
 
 # Step 8: Take simulation steps until there are no more vehicles in the network
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep() # Move simulation forward 1 step
     # Here you can decide what to do with simulation data at each step
-    if 'veh1' in traci.vehicle.getIDList():
-        vehicle_speed = traci.vehicle.getSpeed('veh1')
-        total_speed = total_speed + vehicle_speed
-    # step_count = step_count + 1
-    print(f"Vehicle speed: {vehicle_speed} m/s")
+    for newVeh in traci.simulation.getDepartedIDList():
+        vehicles[newVeh] = Vehicle(newVeh,traci.vehicle.getSpeed(newVeh),traci.vehicle.getAcceleration(newVeh),
+                                    traci.vehicle.getPosition(newVeh),traci.vehicle.getLaneIndex(newVeh),
+                                    traci.vehicle.getLanePosition(newVeh),traci.vehicle.getLength(newVeh))
+        vehicles[newVeh].disableLaneSwitch(traci)
+    for oldVeh in traci.simulation.getArrivedIDList():
+        del vehicles[oldVeh]
+
+
 
 # Step 9: Close connection between SUMO and Traci
 traci.close()

@@ -3,6 +3,7 @@ import os # Module provides functions to handle file paths, directories, environ
 import sys # Module provides access to Python-specific system parameters and functions
 
 from vehicle import Vehicle
+import random
 
 # Step 2: Establish path to SUMO (SUMO_HOME)
 if 'SUMO_HOME' in os.environ:
@@ -33,10 +34,15 @@ total_speed = 0
 # Step 7: Define Functions
 vehicles = {}
 
+changeLaneTest = False
+
 # Step 8: Take simulation steps until there are no more vehicles in the network
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep() # Move simulation forward 1 step
     # Here you can decide what to do with simulation data at each step
+    if(random.randint(1, 75) == 7):
+        changeLaneTest = True
+
    
     for newVeh in traci.simulation.getDepartedIDList():
         vehicles[newVeh] = Vehicle(newVeh,traci.vehicle.getSpeed(newVeh),traci.vehicle.getAcceleration(newVeh),
@@ -46,10 +52,22 @@ while traci.simulation.getMinExpectedNumber() > 0:
             
            
     for currVeh in traci.vehicle.getIDList():
+        if(changeLaneTest == True):
+            if(vehicles[currVeh].targetLane == -1):
+                if(vehicles[currVeh].lane == 4):
+                    vehicles[currVeh].laneSwitchStart(3)
+                else:
+                    vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lane+1)
+
+
+
+            changeLaneTest = False
         vehicles[currVeh].update(traci)
     
     for oldVeh in traci.simulation.getArrivedIDList():
         del vehicles[oldVeh]
+
+
     
 
 

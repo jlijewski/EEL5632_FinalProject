@@ -19,4 +19,12 @@ class Vehicle:
     def disableLaneSwitch(self,traci):
         traci.vehicle.setLaneChangeMode(self.name,0)
 
+    def update(self,traci):
+        self.speed = traci.vehicle.getSpeed(self.name)
+        self.accel = traci.vehicle.getAcceleration(self.name)
+        self.pos = traci.vehicle.getPosition(self.name)
+        self.lane = traci.vehicle.getLaneIndex(self.name)
+        self.lanePos = traci.vehicle.getLanePosition(self.name)
+        self.length = traci.vehicle.getLength(self.name)
+
         

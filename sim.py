@@ -37,13 +37,20 @@ vehicles = {}
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep() # Move simulation forward 1 step
     # Here you can decide what to do with simulation data at each step
+   
     for newVeh in traci.simulation.getDepartedIDList():
         vehicles[newVeh] = Vehicle(newVeh,traci.vehicle.getSpeed(newVeh),traci.vehicle.getAcceleration(newVeh),
                                     traci.vehicle.getPosition(newVeh),traci.vehicle.getLaneIndex(newVeh),
                                     traci.vehicle.getLanePosition(newVeh),traci.vehicle.getLength(newVeh))
         vehicles[newVeh].disableLaneSwitch(traci)
+            
+           
+    for currVeh in traci.vehicle.getIDList():
+        vehicles[currVeh].update(traci)
+    
     for oldVeh in traci.simulation.getArrivedIDList():
         del vehicles[oldVeh]
+    
 
 
 

@@ -75,7 +75,7 @@ class Vehicle:
                     maxRTpos = checkLanePos
                     maxRTveh = veh
                 # find nearest lead veh (its possible there is none)
-                elif checkLanePos > (self.lanePos + self.length) and checkLanePos< maxRTpos:
+                elif checkLanePos > (self.lanePos + self.length) and checkLanePos< minLTpos:
                     minLTpos = checkLanePos
                     minLTveh = veh
             #request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel

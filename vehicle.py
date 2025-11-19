@@ -75,6 +75,7 @@ class Vehicle:
                     maxRTpos = checkLanePos
                     maxRTveh = veh
                 # find nearest lead veh (its possible there is none)
+                #TODO Change this to traci.vehicle.getLeader acting on rear target
                 elif checkLanePos > (self.lanePos + self.length) and checkLanePos< minLTpos:
                     minLTpos = checkLanePos
                     minLTveh = veh
@@ -84,10 +85,12 @@ class Vehicle:
             #traci.vehicle.highlight(minLTveh,color = (220, 103, 47))
             delta_d_rt = self.safeDistRearTarget(traci.vehicle.getSpeed(maxRTveh), self.speed, 1)
             if (self.pos[0] - maxRTpos)> self.safeDistRearTarget(traci.vehicle.getSpeed(maxRTveh), self.speed, 1):
-                traci.lane.openGap(maxRTveh, t_rdsafe, delta_d_rt,3.0,a_rdcon, self.name)
-                isFeasible = True;
+                isFeasible = True
                 self.ackCount += 1
             if self.ackCount == 0:
+                # keep the RT vehicle at the expected headway and prevent random acceleration
+                if maxRTveh !=  self.name:
+                    traci.vehicle.openGap(vehID = maxRTveh,newTimeHeadway =  t_rdsafe, newSpaceHeadway= delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                 self.laneSwitchSimple(traci)
                 traci.vehicle.highlight(maxRTveh,color = (255,255,255,0))
                 #traci.vehicle.highlight(minLTveh,color = (255,255,255,0))

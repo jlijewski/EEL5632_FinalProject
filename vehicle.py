@@ -53,23 +53,30 @@ class Vehicle:
         self.length = traci.vehicle.getLength(self.name)
 
         if self.state == VehicleState.SendingRequest:
-            # iterate over all cars in target lane and send nearest ones a request
+            # iterate over all cars in target lane and send nearest rear and nearest leader a request
             traci.vehicle.highlight(self.name, color=(121, 157, 190))
-            closestVehPos = 0
-            closestVeh = self.name
+            maxRTpos, minLTpos = 0
+            maxRTveh, minLTveh = self.name
+
             for veh in traci.lane.getLastStepVehicleIDs("E1_" + str(self.targetLane)):
                 checkLanePos = traci.vehicle.getLanePosition(veh)
-                # find the closest vehicle that is behind
-                if checkLanePos < (self.lanePos + self.length) and checkLanePos> closestVehPos:
-                    closestVehPos = checkLanePos
-                    closestVeh = veh
-            self.vehicle_requests[closestVeh].put(self.name + "/R")
-            traci.vehicle.highlight(closestVeh,color = (209, 122, 169))
-            if (self.pos[0] - closestVehPos)> self.safeDistRearTarget(traci.vehicle.getSpeed(closestVeh), self.speed, 1):
+                # find the nearest rear veh in target lane
+                if checkLanePos < (self.lanePos + self.length) and checkLanePos> maxRTpos:
+                    maxRTpos = checkLanePos
+                    maxRTveh = veh
+                # find nearest lead veh (its possible there is none)
+                elif checkLanePos > (self.lanePos + self.length) and checkLanePos< maxRTpos:
+                    minLTpos = checkLanePos
+                    minLTveh = veh
+            #request a lane change from the closest vehicle. set the acceleration of ego veh to be constant if the vehicle agrees     
+            self.vehicle_requests[maxRTveh].put(self.name + "/R")
+            traci.vehicle.highlight(maxRTveh,color = (209, 122, 169))
+            if (self.pos[0] - maxRTpos)> self.safeDistRearTarget(traci.vehicle.getSpeed(maxRTveh), self.speed, 1):
                 isFeasible = True;
                 self.ackCount += 1
             if self.ackCount == 0:
                 self.laneSwitchSimple(traci)
+                traci.vehicle.highlight(maxRTveh,color = None)
             else:
                 self.state = VehicleState.WaitingOnAck
         elif self.state == VehicleState.WaitingOnAck:

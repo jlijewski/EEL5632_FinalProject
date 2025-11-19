@@ -21,7 +21,7 @@ class Vehicle:
 
     vehicle_requests: dict[str, Queue] = {}
 
-    def __init__(self, name, speed, accel, pos, lane, lanePos, length, cStyle):
+    def __init__(self, name, speed, accel, pos, lane, lanePos, length):
         self.name = name
         self.speed = speed
         self.accel = accel
@@ -35,7 +35,7 @@ class Vehicle:
         self.ackCount = 0
         # if cStyle>1 then aggressive, if cStyle<1 then conservative
         # aggressive driver change with shorter distance
-        self.cStyle = 1; # 1 for neutral driver. this is an attrivute of vehicle
+        # 1 for neutral driver. this is an attrivute of vehicle
         # print(f"Created: {name}")
 
     def __del__(self):
@@ -54,14 +54,20 @@ class Vehicle:
 
         if self.state == VehicleState.SendingRequest:
             # iterate over all cars in target lane and send nearest ones a request
+            traci.vehicle.highlight(self.name, color=(121, 157, 190))
+            closestVehPos = 0
+            closestVeh = self.name
             for veh in traci.lane.getLastStepVehicleIDs("E1_" + str(self.targetLane)):
                 checkLanePos = traci.vehicle.getLanePosition(veh)
-                if checkLanePos < (self.lanePos + self.length) and checkLanePos > (
-                    self.lanePos - self.length
-                ):
-                    self.vehicle_requests[veh].put(self.name + "/R")
-
-                    self.ackCount += 1
+                # find the closest vehicle that is behind
+                if checkLanePos < (self.lanePos + self.length) and checkLanePos> closestVehPos:
+                    closestVehPos = checkLanePos
+                    closestVeh = veh
+            self.vehicle_requests[closestVeh].put(self.name + "/R")
+            traci.vehicle.highlight(closestVeh,color = (209, 122, 169))
+            if (self.pos[0] - closestVehPos)> self.safeDistRearTarget(traci.vehicle.getSpeed(closestVeh), self.speed, 1):
+                isFeasible = True;
+                self.ackCount += 1
             if self.ackCount == 0:
                 self.laneSwitchSimple(traci)
             else:
@@ -135,7 +141,7 @@ class Vehicle:
         or just do lane change based on if good or bad
         """
 
-    def safeDistRearTarget(v_rd, v_k, c_style):
+    def safeDistRearTarget(self,v_rd, v_k, c_style):
         """
         Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
         rear target lane is most impactful vehicle
@@ -147,17 +153,17 @@ class Vehicle:
         """
         # avg paramters for drivers and vehicles
         # some of these could come from v2v
-        t_driver = 1.35; # driver's reaction time
-        t_brake = 0.15; # acting time of braking system
-        t_rdsafe = 1.8; # rear vehicle time headway
-        a_rdcon = 2; # max deceleration of rear vehicle in target lane
-        t_reaction = t_driver + t_brake;
+        t_driver = 1.35 # driver's reaction time
+        t_brake = 0.15 # acting time of braking system
+        t_rdsafe = 1.8 # rear vehicle time headway
+        a_rdcon = 2 # max deceleration of rear vehicle in target lane
+        t_reaction = t_driver + t_brake
         
         # How can we include cStyle of non ego vehicle through v2v, how does that change equation
         
         # Find min safe distance between ego and rear
         if v_rd -v_k >=-5:
-            t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_h)^2/(2*a_rdcon) + c_style*t_rd_safe*v_rd
+            t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_k)**2/(2*a_rdcon) + c_style*t_rdsafe*v_rd
             t2 = c_style*t_rdsafe*v_rd
             delta_d_mrdh = max(t1, t2)
         else:
@@ -182,5 +188,5 @@ class Vehicle:
     #     t_rdsafe = 1.8; # rear vehicle time headway
     #     a_rdcon = 2; # max deceleration of rear vehicle in target lane
     #     t_reaction = t_driver + t_brake;
-    #     t1 = c_style*v_h*t_reaction+c_style*v_h^2/2*(a_hmax) -c_style*v_ld^2/(2*a_ldmax)
+    #     t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(a_hmax) -c_style*v_ld**2/(2*a_ldmax)
     #     t2 = c_style*v_h*t_ldsafe

@@ -62,12 +62,35 @@ class Vehicle:
 
         if self.state == VehicleState.SendingRequest:
             # iterate over all cars in target lane and send nearest rear and nearest leader a request
-            traci.vehicle.highlight(self.name, color=(121, 157, 190))
+            traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
             maxRTpos=0
             minLTpos = 0
             maxRTveh =self.name
             minLTveh = self.name
+            # get left side Followers 
+            vehRT = traci.vehicle.getLeftFollowers(self.name)
+            # get left side leader
+            vehLT = traci.vehicle.getLeftLeaders(self.name)
+            #get follower
+            vehRO = traci.vehicle.getFollower(self.name)
+            # get leader
+            vehLO = traci.vehicle.getLeader(self.name)
+            for rt in vehRT:
+                if rt[0] !="": #Note that these need to be double quotes or it will fail
+                    traci.vehicle.highlight(rt[0],color = (219, 99, 61))#orange
+                    print("RT"+rt)
+            for lt in vehLT:
+                if lt[0] !="":
+                    traci.vehicle.highlight(lt[0],color = (147, 83, 222))#purple
+                    print("LT"+lt)
 
+            if vehRO !=None:
+                traci.vehicle.highlight(vehRO[0],color = (235, 198, 27))#yellow
+                print("RO:"+vehRO)
+            if vehLO !=None:
+                traci.vehicle.highlight(vehLO[0],color = (100, 137, 242)) #blue
+                print("LO"+vehLO)
+            
             for veh in traci.lane.getLastStepVehicleIDs("E1_" + str(self.targetLane)):
                 checkLanePos = traci.vehicle.getLanePosition(veh)
                 # find the nearest rear veh in target lane
@@ -81,7 +104,7 @@ class Vehicle:
                     minLTveh = veh
             #request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
             self.vehicle_requests[maxRTveh].put(self.name + "/R")
-            traci.vehicle.highlight(maxRTveh,color = (209, 122, 169))
+            #traci.vehicle.highlight(maxRTveh,color = (209, 122, 169))
             #traci.vehicle.highlight(minLTveh,color = (220, 103, 47))
             delta_d_rt = self.safeDistRearTarget(traci.vehicle.getSpeed(maxRTveh), self.speed, 1)
             if (self.pos[0] - maxRTpos)> self.safeDistRearTarget(traci.vehicle.getSpeed(maxRTveh), self.speed, 1):
@@ -92,7 +115,7 @@ class Vehicle:
                 if maxRTveh !=  self.name:
                     traci.vehicle.openGap(vehID = maxRTveh,newTimeHeadway =  t_rdsafe, newSpaceHeadway= delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                 self.laneSwitchSimple(traci)
-                traci.vehicle.highlight(maxRTveh,color = (255,255,255,0))
+                #traci.vehicle.highlight(maxRTveh,color = (255,255,255,0))
                 #traci.vehicle.highlight(minLTveh,color = (255,255,255,0))
             else:
                 self.state = VehicleState.WaitingOnAck

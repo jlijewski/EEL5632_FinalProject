@@ -63,11 +63,8 @@ class Vehicle:
         if self.state == VehicleState.SendingRequest:
             # iterate over all cars in target lane and send nearest rear and nearest leader a request
             traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
-            maxRTpos=0
-            minLTpos = 0
-            maxRTveh =self.name
-            minLTveh = self.name
             # get target side Followers 
+            # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
             vehRTlist = traci.vehicle.getLeftFollowers(self.name)
             vehRT=("",-1)
             if vehRTlist:
@@ -84,39 +81,20 @@ class Vehicle:
             
             # Highlight neighbors for fun
             if vehRT[0] != "": 
-                # theres some weird string stuff both of the checks are needed.
+                #Note that these need to be double quotes or it will fail
+                # theres some weird string stuff so watch for errors in these checks
                 traci.vehicle.highlight(vehRT[0],color = (219, 99, 61))#orange
-                print('1')
-            if vehLT[0]!=None and vehLT[0] !="":
+            if vehLT[0] !="":
                 traci.vehicle.highlight(vehLT[0],color = (147, 83, 222))#purple
-                print('2')
-            if vehRO[0]!=None:
+            if vehRO!=None and vehRO[0]!='':
                 traci.vehicle.highlight(vehRO[0],color = (235, 198, 27))#yellow
-                print('3')
-            if vehLO[0]!=None:
+            if vehLO!=None and vehLO[0]!='':
                 traci.vehicle.highlight(vehLO[0],color = (100, 137, 242)) #blue
-                print('4')
-            #idk if this loop is ncessary if the neighbors have already been found
-            # for veh in traci.lane.getLastStepVehicleIDs("E1_" + str(self.targetLane)):
-                # checkLanePos = traci.vehicle.getLanePosition(veh)
-                # find the nearest rear veh in target lane
-                # if checkLanePos < (self.lanePos + self.length) and checkLanePos> maxRTpos:
-                #     maxRTpos = checkLanePos
-                #     maxRTveh = veh
-                # find nearest lead veh (its possible there is none)
-                #TODO Change this to traci.vehicle.getLeader acting on rear target
-                # elif checkLanePos > (self.lanePos + self.length) and checkLanePos< minLTpos:
-                #     minLTpos = checkLanePos
-                #     minLTveh = veh
-            if vehRT[0]!='' and vehRT[0] !="": #Note that these need to be double quotes or it will fail
-                print('5')
+            if vehRT[0]!='' and vehRT[0] !="":
                 #request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
                 self.vehicle_requests[vehRT[0]].put(self.name + "/R")
-                print('6')
-                #traci.vehicle.highlight(maxRTveh,color = (209, 122, 169))
-                #traci.vehicle.highlight(minLTveh,color = (220, 103, 47))
                 delta_d_rt = self.safeDistRearTarget(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
-                if (self.pos[0] - maxRTpos)> self.safeDistRearTarget(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1):
+                if vehRT[1]> self.safeDistRearTarget(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1):
                     isFeasible = True
                     self.ackCount += 1
                 if self.ackCount == 0:
@@ -124,8 +102,6 @@ class Vehicle:
                     if vehRT[0] !=  self.name:
                         traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                     self.laneSwitchSimple(traci)
-                    #traci.vehicle.highlight(maxRTveh,color = (255,255,255,0))
-                    #traci.vehicle.highlight(minLTveh,color = (255,255,255,0))
                 else:
                     self.state = VehicleState.WaitingOnAck
         elif self.state == VehicleState.WaitingOnAck:

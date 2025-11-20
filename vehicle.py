@@ -33,9 +33,7 @@ class Vehicle:
         self.state = VehicleState.Idle
         self.vehicle_requests[self.name] = Queue()
         self.ackCount = 0
-        # if cStyle>1 then aggressive, if cStyle<1 then conservative
-        # aggressive driver change with shorter distance
-        # 1 for neutral driver. this is an attrivute of vehicle
+        # TODO : consider adding cstyle as attribute of veh
         # print(f"Created: {name}")
 
     def __del__(self):
@@ -52,8 +50,13 @@ class Vehicle:
         self.lanePos = traci.vehicle.getLanePosition(self.name)
         self.length = traci.vehicle.getLength(self.name)
 
-        # avg paramters for drivers and vehicles
-        # some of these could come from v2v
+        """ 
+        avg paramters for drivers and vehicles
+        TODO:
+            some of these could be taken from v2v instead
+            these are used to set the gap and to calculate safe distance
+            its silly to define them here and in the safe distance methods
+        """
         t_driver = 1.35 # driver's reaction time
         t_brake = 0.15 # acting time of braking system
         t_rdsafe = 1.8 # rear vehicle time headway
@@ -91,22 +94,27 @@ class Vehicle:
             if vehLO!=None and vehLO[0]!='':
                 traci.vehicle.highlight(vehLO[0],color = (100, 137, 242)) #blue
             if vehRT[0]!='' and vehRT[0] !="":
-                #request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
+
+                """
+                request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
+                TODO: need additional acks for other neighbor cars using the appropriate safe dist method. 
+                each safe dist smaller than the distance between the ego car and the neighbor
+                """
+                # TODO: need additional acks 
                 self.vehicle_requests[vehRT[0]].put(self.name + "/R")
-                delta_d_rt = self.safeDistRearTarget(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
-                if vehRT[1]> self.safeDistRearTarget(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1):
-                    isFeasible = True
+                RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
+                if vehRT[1]> RTsafeDist:
                     self.ackCount += 1
                 if self.ackCount == 0:
                     # keep the RT vehicle at the expected headway and prevent random acceleration
                     if vehRT[0] !=  self.name:
-                        traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
-                    self.laneSwitchSimple(traci)
+                        traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
+                    self.laneSwitch(traci)
                 else:
                     self.state = VehicleState.WaitingOnAck
         elif self.state == VehicleState.WaitingOnAck:
             if self.ackCount == 0:
-                self.laneSwitchSimple(traci)
+                self.laneSwitch(traci)
             else:
                 self.state = VehicleState.WaitingOnAck
 
@@ -123,7 +131,7 @@ class Vehicle:
         print("started switch")
         self.targetLane = target
 
-    def laneSwitchSimple(self, traci):
+    def laneSwitch(self, traci):
         self.state = VehicleState.Idle
 
         print("CHANGED LANE")
@@ -132,66 +140,27 @@ class Vehicle:
         )
         self.targetLane = -1
     
-    def laneSwitch2(self, traci):
+
+    def findRTsafeDist(self,v_rd, v_k, c_style):
         """
-        Level 2 Lane Switch
+        Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
         Based on: 
         R. Dang, J. Ding, B. Su, Q. Yao, Y. Tian and K. Li, 
         "A lane change warning system based on V2V communication" 
-        """
-
-        """
-        Enviroment Detection
-        Get data using V2V about: 
-        relative position and 
-        relative movement of surrounding vechicles
-        """
-
-        """
-        Calculate minimum safe distance for lane chance
-        Based on enviroment data and driving style index
-
-        min safe distance analysis avoids collision and keep safe following distance
-        rear vehicle - small deceleration or constant speed
-        rear vehichle is most important
-
-        Lane change is feasible if distance between ego vehicle and all 4 surrounding 
-        vechicles is bigger than calculated minimum safe distance 
-        """
-        
-
-        """
-        Judgment of Lane change Feasibility
-        Compare min safe distance to real distance
-        """
-        # isFeasible = False
-        # if (self.loc - rear.loc)> safeDistRearTarget:
-        #   isFeasible = True;
-        """
-        Take Action
-        Either alert driver that lane change is good or bad
-        or just do lane change based on if good or bad
-        """
-
-    def safeDistRearTarget(self,v_rd, v_k, c_style):
-        """
-        Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
-        rear target lane is most impactful vehicle
         From eq (16)
+        rear target lane is most impactful vehicle
         v_rd rear vechicle in target lane speed before lane change
         v_k ego vechicles speed befor lane change
-        somewhere between equation (5) and (6) v_h changes to v_k
         cStyle ego driving style
         """
-        # avg paramters for drivers and vehicles
-        # some of these could come from v2v
+        # TODO: see comment in update function on these, this double definition is silly
         t_driver = 1.35 # driver's reaction time
         t_brake = 0.15 # acting time of braking system
         t_rdsafe = 1.8 # rear vehicle time headway
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
         
-        # How can we include cStyle of non ego vehicle through v2v, how does that change equation
+        # TODO? can we include cStyle of non ego vehicle through v2v, how does that change equation
         
         # Find min safe distance between ego and rear
         if v_rd -v_k >=-5:
@@ -203,22 +172,43 @@ class Vehicle:
         return delta_d_mrdh
 
 
-    # def safeDistFrontTarget(v_rd, v_h, c_style):
-    #     """
-    #     Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
-    #     rear target lane is most impactful vehicle
-    #     From eq (16)
-    #     v_rd rear vechicle in target lane speed before lane change
-    #     v_h ego vechicles speed befor lane change
-    #     somewhere between equation (5) and (6) v_h changes to v_k
-    #     cStyle ego driving style
-    #     """
-    #     # avg paramters for drivers and vehicles
-    #     # some of these could come from v2v
-    #     t_driver = 1.35; # driver's reaction time
-    #     t_brake = 0.15; # acting time of braking system
-    #     t_rdsafe = 1.8; # rear vehicle time headway
-    #     a_rdcon = 2; # max deceleration of rear vehicle in target lane
-    #     t_reaction = t_driver + t_brake;
-    #     t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(a_hmax) -c_style*v_ld**2/(2*a_ldmax)
-    #     t2 = c_style*v_h*t_ldsafe
+    def findLTSafeDist(v_ld, v_h, c_style):
+        """
+        Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
+        From eq (16)
+        v_ld rear vechicle in target lane speed before lane change
+        v_h ego vechicles speed befor lane change
+        cStyle ego driving style
+        """
+        # avg paramters for drivers and vehicles
+        # some of these could come from v2v
+        # TODO these may be able to be pulled from car info
+        t_driver = 1.35 # driver's reaction time
+        t_brake = 0.15 # acting time of braking system
+        t_reaction = t_driver + t_brake
+
+        # TODO: read through paper more to figure out what these calues should be
+        t_ldsafe = 1.8 # rear vehicle time headway
+        a_ldcon = 2 # max deceleration of rear vehicle in target lane
+        # TODO!! IDK how to find this value, this is a place holder, need to examine paper
+        a_hmax = 2.5 
+        a_ldmax = 2.5
+
+        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(a_hmax) -c_style*v_ld**2/(2*a_ldmax)
+        t2 = c_style*v_h*t_ldsafe
+        delta_d_mldh = min(t1,t2)
+        return delta_d_mldh
+    
+    def findXOSafeDist(v_h, t_xosafe, c_style):
+        """
+        Find the minimum safe distance between ego-vehicle and vehicle in original lane
+        From eq (16)
+        v_h ego vechicles speed befor lane change
+        t_xosafe safe time headway between ego and front/rear vehicle in original lane
+            this may or may not actually be a passed arg
+        cStyle ego driving style
+        """
+        delta_d_xoh = c_style*v_h*t_xosafe
+        return delta_d_xoh
+
+

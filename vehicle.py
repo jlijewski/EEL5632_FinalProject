@@ -67,29 +67,31 @@ class Vehicle:
             minLTpos = 0
             maxRTveh =self.name
             minLTveh = self.name
-            # get left side Followers 
-            vehRT = traci.vehicle.getLeftFollowers(self.name)
-            # get left side leader
-            vehLT = traci.vehicle.getLeftLeaders(self.name)
+            # get target side Followers 
+            vehRTlist = traci.vehicle.getLeftFollowers(self.name)
+            vehRT=("",-1)
+            if vehRTlist:
+                vehRT = min(vehRTlist, key=lambda x: x[1])
+            # get target side leader
+            vehLTlist = traci.vehicle.getLeftLeaders(self.name)
+            vehLT=("",-1)
+            if vehLTlist:
+                vehLT = min(vehLTlist, key=lambda x: x[1])
             #get follower
             vehRO = traci.vehicle.getFollower(self.name)
             # get leader
             vehLO = traci.vehicle.getLeader(self.name)
-            for rt in vehRT:
-                if rt[0] !="": #Note that these need to be double quotes or it will fail
-                    traci.vehicle.highlight(rt[0],color = (219, 99, 61))#orange
-                    print("RT"+rt)
-            for lt in vehLT:
-                if lt[0] !="":
-                    traci.vehicle.highlight(lt[0],color = (147, 83, 222))#purple
-                    print("LT"+lt)
+            
+            
+            if vehRT[0] !="": #Note that these need to be double quotes or it will fail
+                traci.vehicle.highlight(vehRT[0],color = (219, 99, 61))#orange
+            if vehLT[0] !="":
+                traci.vehicle.highlight(vehLT[0],color = (147, 83, 222))#purple
 
             if vehRO !=None:
                 traci.vehicle.highlight(vehRO[0],color = (235, 198, 27))#yellow
-                print("RO:"+vehRO)
             if vehLO !=None:
                 traci.vehicle.highlight(vehLO[0],color = (100, 137, 242)) #blue
-                print("LO"+vehLO)
             
             for veh in traci.lane.getLastStepVehicleIDs("E1_" + str(self.targetLane)):
                 checkLanePos = traci.vehicle.getLanePosition(veh)

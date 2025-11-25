@@ -15,7 +15,11 @@ class VehicleState(Enum):
 #     Two = "E1_2"
 #     Three = "E1_3"
 #     Four = "E1_4"
-
+class Packet:
+    def __init__(self,sender,type,reportedSpeed):
+        self.sender = sender
+        self.type = type
+        self.speed = reportedSpeed
 
 class Vehicle:
 
@@ -102,7 +106,8 @@ class Vehicle:
                 each safe dist smaller than the distance between the ego car and the neighbor
                 """
                 # TODO: need additional acks 
-                self.vehicle_requests[vehRT[0]].put(self.name + "/R")
+                requestPacket = Packet("R", self.name,self.speed)
+                self.vehicle_requests[vehRT[0]].put(requestPacket)
                 RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
                 if vehRT[1]> RTsafeDist:
                     self.ackCount += 1
@@ -123,9 +128,10 @@ class Vehicle:
 
         while not self.vehicle_requests[self.name].empty():
             item = self.vehicle_requests[self.name].get_nowait()
-            stringParts = item.split("/")
-            if stringParts[1] == "R":
-                self.vehicle_requests[stringParts[0]].put(self.name + "/A")
+            #stringParts = item.split("/")
+            if item.type == "R":
+                ackPacket = Packet("A",self.name,self.speed)
+                self.vehicle_requests[item.sender].put(ackPacket)
             else:
                 self.ackCount -= 1
 

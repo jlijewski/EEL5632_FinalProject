@@ -106,9 +106,10 @@ class Vehicle:
                 each safe dist smaller than the distance between the ego car and the neighbor
                 """
                 # TODO: need additional acks 
-                requestPacket = Packet("R", self.name,self.speed)
+                requestPacket = Packet(type = "R", sender = self.name,reportedSpeed=self.speed)
                 self.vehicle_requests[vehRT[0]].put(requestPacket)
                 RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
+                print("sent request from ", self.name, " to ",vehRT[0] )
                 if vehRT[1]> RTsafeDist:
                     self.ackCount += 1
                 if self.ackCount == 0:
@@ -122,6 +123,7 @@ class Vehicle:
             if self.ackCount == 0:
                 self.laneSwitch(traci)
             else:
+                # print(self.lane , ": " ,self.ackCount)
                 self.state = VehicleState.WaitingOnAck
         #else:
             #traci.vehicle.highlight(self.name, color=(255, 255, 255)) 
@@ -129,8 +131,11 @@ class Vehicle:
         while not self.vehicle_requests[self.name].empty():
             item = self.vehicle_requests[self.name].get_nowait()
             #stringParts = item.split("/")
+            print("received request from ", item.sender )
+            print(item.type)
             if item.type == "R":
-                ackPacket = Packet("A",self.name,self.speed)
+                print("sending ack to ", item.sender)
+                ackPacket = Packet(type="A",sender=self.name,reportedSpeed=self.speed)
                 self.vehicle_requests[item.sender].put(ackPacket)
             else:
                 self.ackCount -= 1

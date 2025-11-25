@@ -1,27 +1,31 @@
 # Step 1: Add modules to provide access to specific libraries and functions
-import os # Module provides functions to handle file paths, directories, environment variables
-import sys # Module provides access to Python-specific system parameters and functions
+import os  # Module provides functions to handle file paths, directories, environment variables
+import sys  # Module provides access to Python-specific system parameters and functions
 
 from vehicle import Vehicle
 import random
 
 # Step 2: Establish path to SUMO (SUMO_HOME)
-if 'SUMO_HOME' in os.environ:
-    tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
+if "SUMO_HOME" in os.environ:
+    tools = os.path.join(os.environ["SUMO_HOME"], "tools")
     sys.path.append(tools)
 else:
     sys.exit("Please declare environment variable 'SUMO_HOME'")
 
 # Step 3: Add Traci module to provide access to specific libraries and functions
-import traci # Static network information (such as reading and analyzing network files)
+import traci  # Static network information (such as reading and analyzing network files)
 
 # Step 4: Define Sumo configuration
 Sumo_config = [
-    'sumo-gui',
-    '-c', 'highway/highway.sumocfg',
-    '--step-length', '0.05',
-    '--delay', '1000',
-    '--lateral-resolution', '0.1'
+    "sumo-gui",
+    "-c",
+    "highway/highway.sumocfg",
+    "--step-length",
+    "0.05",
+    "--delay",
+    "1000",
+    "--lateral-resolution",
+    "0.1",
 ]
 
 # Step 5: Open connection between SUMO and Traci
@@ -36,41 +40,50 @@ vehicles = {}
 
 changeLaneTest = False
 
+currSimStep = 0
+totalTimeSpent = 1.0
+totalVeh = 1.0
+avgTime = 1.0
+
 # Step 8: Take simulation steps until there are no more vehicles in the network
 while traci.simulation.getMinExpectedNumber() > 0:
-    traci.simulationStep() # Move simulation forward 1 step
+    traci.simulationStep()  # Move simulation forward 1 step
+    currSimStep += 1
     # Here you can decide what to do with simulation data at each step
-    if(random.randint(1, 75) == 7):
+    if random.randint(1, 75) == 7:
         changeLaneTest = True
 
-   
     for newVeh in traci.simulation.getDepartedIDList():
-        vehicles[newVeh] = Vehicle(newVeh,traci.vehicle.getSpeed(newVeh),traci.vehicle.getAcceleration(newVeh),
-                                    traci.vehicle.getPosition(newVeh),traci.vehicle.getLaneIndex(newVeh),
-                                    traci.vehicle.getLanePosition(newVeh),traci.vehicle.getLength(newVeh))
+        vehicles[newVeh] = Vehicle(
+            newVeh,
+            traci.vehicle.getSpeed(newVeh),
+            traci.vehicle.getAcceleration(newVeh),
+            traci.vehicle.getPosition(newVeh),
+            traci.vehicle.getLaneIndex(newVeh),
+            traci.vehicle.getLanePosition(newVeh),
+            traci.vehicle.getLength(newVeh),
+            currSimStep
+        )
         vehicles[newVeh].disableLaneSwitch(traci)
-            
-           
+        
+
     for currVeh in traci.vehicle.getIDList():
-        if(changeLaneTest == True):
-            if(vehicles[currVeh].targetLane == -1):
-                if(vehicles[currVeh].lane == 4):
+        if changeLaneTest == True:
+            if vehicles[currVeh].targetLane == -1:
+                if vehicles[currVeh].lane == 4:
                     vehicles[currVeh].laneSwitchStart(3)
                 else:
-                    vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lane+1)
-
-
+                    vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lane + 1)
 
             changeLaneTest = False
         vehicles[currVeh].update(traci)
-    
+
     for oldVeh in traci.simulation.getArrivedIDList():
+        
+        totalTimeSpent += (currSimStep - vehicles[oldVeh].startTime)
+        totalVeh += 1
         del vehicles[oldVeh]
 
-
-    
-
-
-
+print(totalTimeSpent/totalVeh)
 # Step 9: Close connection between SUMO and Traci
 traci.close()

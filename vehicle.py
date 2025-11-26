@@ -16,10 +16,11 @@ class VehicleState(Enum):
 #     Three = "E1_3"
 #     Four = "E1_4"
 class Packet:
-    def __init__(self,sender,type,reportedSpeed):
+    def __init__(self,sender,type,reportedSpeed, distance):
         self.sender = sender
         self.type = type
         self.speed = reportedSpeed
+        self.distance = distance
 
 class Vehicle:
 
@@ -42,7 +43,7 @@ class Vehicle:
         # print(f"Created: {name}")
 
     def __del__(self):
-        print(f"Deleted: {self}")
+        pass# print(f"Deleted: {self}")
 
     def disableLaneSwitch(self, traci):
         traci.vehicle.setLaneChangeMode(self.name, 0)
@@ -106,12 +107,13 @@ class Vehicle:
                 each safe dist smaller than the distance between the ego car and the neighbor
                 """
                 # TODO: need additional acks 
-                requestPacket = Packet(type = "R", sender = self.name,reportedSpeed=self.speed)
-                self.vehicle_requests[vehRT[0]].put(requestPacket)
+
                 RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
+                requestPacket = Packet(type = "R", sender = self.name,reportedSpeed=self.speed,distance=vehRT[1])
+                self.vehicle_requests[vehRT[0]].put(requestPacket)
                 print("sent request from ", self.name, " to ",vehRT[0] )
-                if vehRT[1]> RTsafeDist:
-                    self.ackCount += 1
+                #if vehRT[1]> RTsafeDist:
+                self.ackCount += 1
                 if self.ackCount == 0:
                     # keep the RT vehicle at the expected headway and prevent random acceleration
                     if vehRT[0] !=  self.name:
@@ -134,9 +136,12 @@ class Vehicle:
             print("received request from ", item.sender )
             print(item.type)
             if item.type == "R":
-                print("sending ack to ", item.sender)
-                ackPacket = Packet(type="A",sender=self.name,reportedSpeed=self.speed)
-                self.vehicle_requests[item.sender].put(ackPacket)
+                safeDistCheck = self.findRTsafeDist(item.speed, self.speed, 1)
+                print("comparing ",item.distance, "and ", safeDistCheck )
+                if(item.distance >safeDistCheck ):
+                    print("sending ack to ", item.sender)
+                    ackPacket = Packet(type="A",sender=self.name,reportedSpeed=self.speed, distance=None)
+                    self.vehicle_requests[item.sender].put(ackPacket)
             else:
                 self.ackCount -= 1
 

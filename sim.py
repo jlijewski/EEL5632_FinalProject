@@ -50,7 +50,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep()  # Move simulation forward 1 step
     currSimStep += 1
     # Here you can decide what to do with simulation data at each step
-    if random.randint(1, 75) == 7:
+    if random.randint(1, 30) == 7:
         changeLaneTest = True
 
     for newVeh in traci.simulation.getDepartedIDList():

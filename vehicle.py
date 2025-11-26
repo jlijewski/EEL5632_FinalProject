@@ -63,70 +63,108 @@ class Vehicle:
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
 
-        # change lane if necessary
+        # change lane if necessary and send request. if ego car is sending a request, then it wants to change lane
         if self.state == VehicleState.SendingRequest:
+            # skip if no target lane was set
+            if self.targetLane == 0:
+                self.state = VehicleState.Idle
+                return
+            # Goal: send request to 4 neighbor cars, follower/leader in target lane and follower/leader in original lane
             # iterate over all cars in target lane and send nearest rear and nearest leader a request
             traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
 
-
+            '''Get neighbor cars'''
             # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
             #get ego lane follower
-            vehRO = traci.vehicle.getFollower(self.name)
+            vehRO = traci.vehicle.getFollower(self.name) or ["",-1]
             # get ego lane leader
-            vehLO = traci.vehicle.getLeader(self.name)
+            vehLO = traci.vehicle.getLeader(self.name) or ["",-1]
             # determine if switching to left or right and get appropriate leader and follower (there is an easier way to do thise with bits)
-            # original-lane neighbors
-            vehRO = traci.vehicle.getFollower(self.name)
-            vehLO = traci.vehicle.getLeader(self.name)
-
-            # get target side Neighbors
-            # pick target-side followers/leaders based on desired target lane
             if self.targetLane > 0:
                 # target is left
                 vehRTList = traci.vehicle.getLeftFollowers(self.name) or []
                 vehLTList = traci.vehicle.getLeftLeaders(self.name) or []
-            else:
+            elif self.targetLane < 0:
                 # target is right lane
                 vehRTList = traci.vehicle.getRightFollowers(self.name) or []
                 vehLTList = traci.vehicle.getRightLeaders(self.name) or []
-
-            vehRT = min(vehRTList, key=lambda x: x[1]) if vehRTList else ("", -1)
-            vehLT = min(vehLTList, key=lambda x: x[1]) if vehLTList else ("", -1)
+            # get closest follower/leader in target lane
+            vehRT = ("",-1) if not vehRTList else min(vehRTList, key=lambda x: x[1])
+            vehLT = ("",-1) if not vehLTList else min(vehLTList, key=lambda x: x[1])
 
             """
-            request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
+            Send Request a lane change from the closest vehicles. if RT vehicle agrees, set its max headway and decel
             TODO: need additional acks for other neighbor cars using the appropriate safe dist method. 
             each safe dist smaller than the distance between the ego car and the neighbor
             """
-            # if there's a target-side follower, request it to make space
+            requestsSent = 0
+            # request target side rear
             if vehRT[0]:
-                # send request to nearest follower on target side
                 # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
                 self.vehicle_requests[vehRT[0]].put(self.name + "/R")
+                #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
                 RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
                 if vehRT[1] > RTsafeDist:
                     self.ackCount += 1
+                    requestsSent+=1
+            # request from taregt side lead
+            if vehLT[0]:
+                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
+                self.vehicle_requests[vehLT[0]].put(self.name + "/R")
+                #TODO: below line is ideally done by Lt car? or Lt car can do the check between safe dist and current dist
+                RTsafeDist = self.findLTsafeDist(traci.vehicle.getSpeed(vehLT[0]), self.speed, 1)
+                if vehRT[1] > RTsafeDist:
+                    self.ackCount += 1
+                    requestsSent+=1
+            #request from original lane follower
+            if vehRO[0]:
+                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
+                self.vehicle_requests[vehRO[0]].put(self.name + "/R")
+                #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
+                RTsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehRO[0]), 1.8, 1)
+                if vehRO[1] > RTsafeDist:
+                    self.ackCount += 1
+                    requestsSent+=1
+            # request to car infront of ego veh in original lane
+            if vehLO[0]:
+                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
+                self.vehicle_requests[vehLO[0]].put(self.name + "/R")
+                #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
+                RTsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehLO[0]), 1.8, 1)
+                if vehLO[1] > RTsafeDist:
+                    self.ackCount += 1
+                    requestsSent+=1
 
-                if self.ackCount == 0:
-                    # keep the RT vehicle at the expected headway and prevent random acceleration
-                    if vehRT[0] !=  self.name:
-                        traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
-                    self.laneSwitch(traci)
-                else:
-                    self.state = VehicleState.WaitingOnAck
+            '''if all neighbors agree on request, do lane change'''
+            # if there are no neighbor cars, do lane change
+            if requestsSent ==0:
+                self.laneSwitch(traci)
+            # check that the number of requests sent is same as requests returned
+            elif self.ackCount == requestsSent:
+                # keep the RT vehicle at the expected headway and prevent random acceleration
+                if vehRT[0]:
+                    traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
+                self.laneSwitch(traci)
+            else:
+                # if there are unreturned requests, continue to wait
+                self.state = VehicleState.WaitingOnAck
+
         elif self.state == VehicleState.WaitingOnAck:
+            # if all acks are in, do lane switch, otherwise keep waiting
             if self.ackCount == 0:
+                #TODO: extra safety check?
                 self.laneSwitch(traci)
             else:
                 self.state = VehicleState.WaitingOnAck
 
+        # process incomming request and ack
         while not self.vehicle_requests[self.name].empty():
             item = self.vehicle_requests[self.name].get_nowait()
             stringParts = item.split("/")
             if stringParts[1] == "R":
                 self.vehicle_requests[stringParts[0]].put(self.name + "/A")
             else:
-                self.ackCount -= 1
+                self.ackCount += 1 #TODO should this be a negative
     
     def laneChagneTest (self, traci):
         """
@@ -216,7 +254,7 @@ class Vehicle:
         return delta_d_mrdh
 
 
-    def findLTSafeDist(v_ld, v_h, c_style):
+    def findLTsafeDist(self, v_ld, v_h, c_style):
         """
         Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
         From eq (16)
@@ -243,7 +281,7 @@ class Vehicle:
         delta_d_mldh = min(t1,t2)
         return delta_d_mldh
     
-    def findXOSafeDist(v_h, t_xosafe, c_style):
+    def findXOsafeDist(self, v_h, t_xosafe, c_style):
         """
         Find the minimum safe distance between ego-vehicle and vehicle in original lane
         From eq (16)

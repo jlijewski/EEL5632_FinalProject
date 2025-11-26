@@ -105,7 +105,6 @@ class Vehicle:
                 #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
                 RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
                 if vehRT[1] > RTsafeDist:
-                    self.ackCount += 1
                     requestsSent+=1
             # request from taregt side lead
             if vehLT[0]:
@@ -114,25 +113,24 @@ class Vehicle:
                 #TODO: below line is ideally done by Lt car? or Lt car can do the check between safe dist and current dist
                 RTsafeDist = self.findLTsafeDist(traci.vehicle.getSpeed(vehLT[0]), self.speed, 1)
                 if vehRT[1] > RTsafeDist:
-                    self.ackCount += 1
                     requestsSent+=1
             #request from original lane follower
             if vehRO[0]:
                 # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
                 self.vehicle_requests[vehRO[0]].put(self.name + "/R")
                 #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
-                RTsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehRO[0]), 1.8, 1)
-                if vehRO[1] > RTsafeDist:
-                    self.ackCount += 1
+
+                ROsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehRO[0]), 1.8, 1)
+                if vehRO[1] > ROsafeDist:
                     requestsSent+=1
             # request to car infront of ego veh in original lane
             if vehLO[0]:
                 # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
                 self.vehicle_requests[vehLO[0]].put(self.name + "/R")
                 #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
-                RTsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehLO[0]), 1.8, 1)
-                if vehLO[1] > RTsafeDist:
-                    self.ackCount += 1
+                LOsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehLO[0]), 1.8, 1)
+                if vehLO[1] > LOsafeDist:
+                    # self.ackCount += 1
                     requestsSent+=1
 
             '''if all neighbors agree on request, do lane change'''
@@ -143,7 +141,14 @@ class Vehicle:
             elif self.ackCount == requestsSent:
                 # keep the RT vehicle at the expected headway and prevent random acceleration
                 if vehRT[0]:
-                    traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
+                    thw = vehRT[1]/traci.vehicle.getSpeed(vehRT[0])
+                    # check if the current headway is smaller than safe headway
+                    # TODO: should I do this for all lanes? Probably just maintain gap for all, not change it 
+                    if thw<t_rdsafe:
+                        traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 5.0, changeRate = a_rdcon, referenceVehID=self.name)
+                    else:
+                        #maintain current headway
+                        traci.vehicle.openGap(vehID = vehRT[0], newTimeHeadway=thw, newSpaceHeadway=vehRT[1],duration=5.0, changeRate=0.5)
                 self.laneSwitch(traci)
             else:
                 # if there are unreturned requests, continue to wait
@@ -290,6 +295,7 @@ class Vehicle:
             this may or may not actually be a passed arg
         cStyle ego driving style
         """
+
         delta_d_xoh = c_style*v_h*t_xosafe
         return delta_d_xoh
 
@@ -316,3 +322,11 @@ class Vehicle:
         if (left_follower[0] == "" and left_follower[0]=="") or left_follower[1] > rd_safe:
             changeLane = 1
         return changeLane
+    
+    def getTimeHeadway(self,traci,followerID, lookahead=100.0):
+        leader_info = traci.vehicle.getLeader(followerID, lookahead)
+        if leader_info is None:
+            return None  # no leader ahead
+        leaderID, gap = leader_info
+        speed = traci.vehicle.getSpeed(followerID)
+        return gap / speed if speed > 0 else float('inf')

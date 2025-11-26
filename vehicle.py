@@ -158,18 +158,9 @@ class Vehicle:
             # confirmf there is  rear vehicle in the same lane
             if vehRO[0] != "":
                 # get goal speed of following vehicle
-                try:
-                    rf_goal = traci.vehicle.getMaxSpeed(vehRO[0])*traci.vehicle.getSpeedFactor(vehRO[0])  # follower's goal / max speed
-                except Exception:
-                    print("6")
-                    rf_goal = traci.vehicle.getSpeed(vehRO[0])  # fallback
+                rf_goal = traci.vehicle.getMaxSpeed(vehRO[0])*traci.vehicle.getSpeedFactor(vehRO[0])  # follower's goal / max speed
                 # get goal speed of ego vehicle
-                try:
-                    ego_goal = traci.vehicle.getMaxSpeed(self.name)*traci.vehicle.getSpeedFactor(self.name)
-                except Exception:
-                    print("7")
-                    ego_goal = self.speed
-
+                ego_goal = traci.vehicle.getMaxSpeed(self.name)*traci.vehicle.getSpeedFactor(self.name)
                 # threshold to avoid tiny differences triggering lane changes
                 SPEED_THRESHOLD = 0.5  # m/s
                 # compare goal speeds of ego and following vehicle (maxSpeed*speedFactor)

@@ -38,14 +38,14 @@ total_speed = 0
 # Step 7: Define Functions
 vehicles = {}
 
-changeLaneTest = False
+#changeLaneTest = False
 
 # Step 8: Take simulation steps until there are no more vehicles in the network
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep()  # Move simulation forward 1 step
     # Here you can decide what to do with simulation data at each step
-    if random.randint(1, 75) == 7:
-        changeLaneTest = True
+    # if random.randint(1, 75) == 7:
+    #     changeLaneTest = True
 
     for newVeh in traci.simulation.getDepartedIDList():
         vehicles[newVeh] = Vehicle(
@@ -60,14 +60,14 @@ while traci.simulation.getMinExpectedNumber() > 0:
         vehicles[newVeh].disableLaneSwitch(traci)
 
     for currVeh in traci.vehicle.getIDList():
-        if changeLaneTest == True:
-            if vehicles[currVeh].targetLane == -1:
-                if vehicles[currVeh].lane == 4:
-                    vehicles[currVeh].laneSwitchStart(3)
-                else:
-                    vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lane + 1)
+        if vehicles[currVeh].laneChagneTest(traci) !=0:
+        #     if vehicles[currVeh].targetLane == -1:
+        #         if vehicles[currVeh].lane == 4:
+        #             vehicles[currVeh].laneSwitchStart(3)
+        #         else:
+            vehicles[currVeh].laneSwitchStart(vehicles[currVeh].laneChagneTest(traci))
 
-            changeLaneTest = False
+        #     changeLaneTest = False
         vehicles[currVeh].update(traci)
 
     for oldVeh in traci.simulation.getArrivedIDList():

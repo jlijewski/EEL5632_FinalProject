@@ -62,49 +62,49 @@ class Vehicle:
         t_rdsafe = 1.8 # rear vehicle time headway
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
-
         if self.state == VehicleState.SendingRequest:
             # iterate over all cars in target lane and send nearest rear and nearest leader a request
             traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
             # get target side Followers 
             # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
-            vehRTlist = traci.vehicle.getLeftFollowers(self.name)
-            vehRT=("",-1)
-            if vehRTlist:
-                vehRT = min(vehRTlist, key=lambda x: x[1])
-            # get target side leader
-            vehLTlist = traci.vehicle.getLeftLeaders(self.name)
-            vehLT=("",-1)
-            if vehLTlist:
-                vehLT = min(vehLTlist, key=lambda x: x[1])
             #get follower
             vehRO = traci.vehicle.getFollower(self.name)
             # get leader
             vehLO = traci.vehicle.getLeader(self.name)
-            
             # Highlight neighbors for fun
-            if vehRT[0] != "": 
-                #Note that these need to be double quotes or it will fail
-                # theres some weird string stuff so watch for errors in these checks
-                traci.vehicle.highlight(vehRT[0],color = (219, 99, 61))#orange
-            if vehLT[0] !="":
-                traci.vehicle.highlight(vehLT[0],color = (147, 83, 222))#purple
-            if vehRO!=None and vehRO[0]!='':
-                traci.vehicle.highlight(vehRO[0],color = (235, 198, 27))#yellow
-            if vehLO!=None and vehLO[0]!='':
-                traci.vehicle.highlight(vehLO[0],color = (100, 137, 242)) #blue
-            if vehRT[0]!='' and vehRT[0] !="":
 
-                """
-                request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
-                TODO: need additional acks for other neighbor cars using the appropriate safe dist method. 
-                each safe dist smaller than the distance between the ego car and the neighbor
-                """
-                # TODO: need additional acks 
+            # determine if switching to left or right and get appropriate leader and follower (there is an easier way to do thise with bits)
+            # original-lane neighbors
+            vehRO = traci.vehicle.getFollower(self.name)
+            vehLO = traci.vehicle.getLeader(self.name)
+
+            # pick target-side followers/leaders based on desired target lane
+            if self.targetLane > 0:
+                # target is left
+                vehRTList = traci.vehicle.getLeftFollowers(self.name) or []
+                vehLTList = traci.vehicle.getLeftLeaders(self.name) or []
+            else:
+                # target is right (or default)
+                vehRTList = traci.vehicle.getRightFollowers(self.name) or []
+                vehLTList = traci.vehicle.getRightLeaders(self.name) or []
+
+            vehRT = min(vehRTList, key=lambda x: x[1]) if vehRTList else ("", -1)
+            vehLT = min(vehLTList, key=lambda x: x[1]) if vehLTList else ("", -1)
+
+            """
+            request a lane change from the closest vehicle. if RT vehicle agrees, set its max headway and decel
+            TODO: need additional acks for other neighbor cars using the appropriate safe dist method. 
+            each safe dist smaller than the distance between the ego car and the neighbor
+            """
+            # if there's a target-side follower, request it to make space
+            if vehRT[0]:
+                # send request to nearest follower on target side
+                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
                 self.vehicle_requests[vehRT[0]].put(self.name + "/R")
                 RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
-                if vehRT[1]> RTsafeDist:
+                if vehRT[1] > RTsafeDist:
                     self.ackCount += 1
+
                 if self.ackCount == 0:
                     # keep the RT vehicle at the expected headway and prevent random acceleration
                     if vehRT[0] !=  self.name:
@@ -125,11 +125,81 @@ class Vehicle:
                 self.vehicle_requests[stringParts[0]].put(self.name + "/A")
             else:
                 self.ackCount -= 1
+    
+    def laneChagneTest (self, traci):
+        """
+        Return:
+        1  -> attempt to change left
+        -1  -> attempt to change right
+        0  -> no change
+        """
+        maxLane = 4
+        changeLane = 0
 
+        # leader in current lane (veh tuple: (id, dist) or None)
+        vehLO = traci.vehicle.getLeader(self.name)
+        if vehLO is not None and vehLO[0] != "":
+            # if leader ahead is slower and not accelerating more than ego, consider passing
+            leader_id = vehLO[0]
+            leader_speed = traci.vehicle.getSpeed(leader_id)
+            leader_acc = traci.vehicle.getAcceleration(leader_id)
+            if leader_speed < self.speed and (leader_acc - self.accel) < 0:
+                # pass in left lane, making target lane left lane
+                if self.lane < maxLane:
+                    self.checkLeftLanePass(traci)
+                else:
+                    # If there is no left lane, try passing in right lane
+                    if self.lane >= maxLane:
+                        changeLane = self.checkRightLanePass(traci)
+        '''
+        # NEW: if in leftmost lane (0) and a vehicle on the right ahead is faster,
+        # consider moving right (allow faster traffic to pass). Check right follower gap.
+        if self.lane == maxLane:
+            right_leaders = traci.vehicle.getRightLeaders(self.name) or []
+            if right_leaders:
+                right_leader = min(right_leaders, key=lambda x: x[1])
+                if right_leader[0] != "" and traci.vehicle.getSpeed(right_leader[0]) > self.speed:
+                    right_followers = traci.vehicle.getRightFollowers(self.name) or []
+                    right_follower = min(right_followers, key=lambda x: x[1]) if right_followers else ("", float("inf"))
+                    # if no right follower or follower gap is safe, request move right
+                    if right_follower[0] == "":
+                        changeLane = -1
+                    else:
+                        rd_safe = self.findRTsafeDist(traci.vehicle.getSpeed(right_follower[0]), self.speed, 1)
+                        if right_follower[1] > rd_safe:
+                            changeLane = -1
+        '''
+        if self.lane <= maxLane:
+            vehRO = traci.vehicle.getFollower(self.name)
+
+            if vehRO[0] != "":
+                try:
+                    rf_goal = traci.vehicle.getMaxSpeed(vehRO[0])*traci.vehicle.getSpeedFactor(vehRO[0])  # follower's goal / max speed
+                except Exception:
+                    rf_goal = traci.vehicle.getSpeed(vehRO[0])  # fallback
+
+                try:
+                    ego_goal = traci.vehicle.getMaxSpeed(self.name)*traci.vehicle.getSpeedFactor(self.name)
+                except Exception:
+                    ego_goal = self.speed
+
+                # threshold to avoid tiny differences triggering lane changes
+                SPEED_THRESHOLD = 0.5  # m/s
+
+                # check follower wants to go noticeably faster and follower gap in target lane is safe
+                if rf_goal > ego_goal + SPEED_THRESHOLD:
+                    # compute safe distance required for follower in target lane
+                    rd_safe = self.findRTsafeDist(traci.vehicle.getSpeed(vehRO[0]), self.speed, 1) if vehRO[0] else float("inf")
+                    if vehRO[0] == "" or vehRO[1] > rd_safe:
+                        changeLane = -1
+
+        
+        return changeLane
+    
     def laneSwitchStart(self, target):
         self.state = VehicleState.SendingRequest
         print("started switch")
-        self.targetLane = target
+        self.targetLane = target+self.lane
 
     def laneSwitch(self, traci):
         self.state = VehicleState.Idle
@@ -211,4 +281,36 @@ class Vehicle:
         delta_d_xoh = c_style*v_h*t_xosafe
         return delta_d_xoh
 
+    def checkRightLanePass(self, traci):
+        changeLane =0
+        right_leaders = traci.vehicle.getRightLeaders(self.name) or []
+        right_followers = traci.vehicle.getRightFollowers(self.name) or []
+        right_leader = min(right_leaders, key=lambda x: x[1]) if right_leaders else ("", float("inf"))
+        right_follower = min(right_followers, key=lambda x: x[1]) if right_followers else ("", float("inf"))
+        if right_leader[0] == "" and right_follower[0] == "":
+            changeLane = -1
+        elif right_follower[0] != "":
+            rd_safe = self.findRTsafeDist(traci.vehicle.getSpeed(right_follower[0]), self.speed, 1)
+            if right_follower[1] > rd_safe:
+                changeLane = -1
+        return changeLane
 
+    def checkLeftLanePass(self,traci):
+        changeLane =0
+        # get nearest left leader and follower
+        left_leaders = traci.vehicle.getLeftLeaders(self.name) or []
+        left_followers = traci.vehicle.getLeftFollowers(self.name) or []
+        left_leader = min(left_leaders, key=lambda x: x[1]) if left_leaders else ("", float("inf"))
+        left_follower = min(left_followers, key=lambda x: x[1]) if left_followers else ("", float("inf"))
+
+        # if no vehicles in left lane, then just pass
+        if left_leader[0] == "" and left_follower[0] == "":
+            changeLane = 1
+        else:
+            # check rear follower safe distance if present
+            #TODO: add more checks
+            if left_follower[0] != "":
+                rd_safe = self.findRTsafeDist(traci.vehicle.getSpeed(left_follower[0]), self.speed, 1)
+                if left_follower[1] > rd_safe:
+                    changeLane = 1
+        return changeLane

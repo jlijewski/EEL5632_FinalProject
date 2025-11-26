@@ -29,7 +29,7 @@ class Vehicle:
         self.lane = lane
         self.lanePos = lanePos
         self.length = length
-        self.targetLane = -1
+        self.targetLane = 0
         self.state = VehicleState.Idle
         self.vehicle_requests[self.name] = Queue()
         self.ackCount = 0
@@ -62,29 +62,31 @@ class Vehicle:
         t_rdsafe = 1.8 # rear vehicle time headway
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
+
+        # change lane if necessary
         if self.state == VehicleState.SendingRequest:
             # iterate over all cars in target lane and send nearest rear and nearest leader a request
             traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
-            # get target side Followers 
-            # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
-            #get follower
-            vehRO = traci.vehicle.getFollower(self.name)
-            # get leader
-            vehLO = traci.vehicle.getLeader(self.name)
-            # Highlight neighbors for fun
 
+
+            # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
+            #get ego lane follower
+            vehRO = traci.vehicle.getFollower(self.name)
+            # get ego lane leader
+            vehLO = traci.vehicle.getLeader(self.name)
             # determine if switching to left or right and get appropriate leader and follower (there is an easier way to do thise with bits)
             # original-lane neighbors
             vehRO = traci.vehicle.getFollower(self.name)
             vehLO = traci.vehicle.getLeader(self.name)
 
+            # get target side Neighbors
             # pick target-side followers/leaders based on desired target lane
             if self.targetLane > 0:
                 # target is left
                 vehRTList = traci.vehicle.getLeftFollowers(self.name) or []
                 vehLTList = traci.vehicle.getLeftLeaders(self.name) or []
             else:
-                # target is right (or default)
+                # target is right lane
                 vehRTList = traci.vehicle.getRightFollowers(self.name) or []
                 vehLTList = traci.vehicle.getRightLeaders(self.name) or []
 
@@ -180,7 +182,7 @@ class Vehicle:
         traci.vehicle.changeLane(
             vehID=self.name, laneIndex=self.targetLane, duration=2.0
         )
-        self.targetLane = -1
+        self.targetLane = 0
     
 
     def findRTsafeDist(self,v_rd, v_k, c_style):

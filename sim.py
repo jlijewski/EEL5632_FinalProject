@@ -56,9 +56,9 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
     for currVeh in traci.vehicle.getIDList():
         # see if ego vehcile is in a case to switch lanes
-        if vehicles[currVeh].laneChagneTest(traci) !=0:
+        if vehicles[currVeh].lanechangeTest(traci) !=0:
             # request lane change, changes vehicle state
-            vehicles[currVeh].laneSwitchStart(vehicles[currVeh].laneChagneTest(traci))
+            vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lanechangeTest(traci))
         
         # update does actual lane change
         vehicles[currVeh].update(traci)

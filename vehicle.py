@@ -21,6 +21,9 @@ class Vehicle:
 
     vehicle_requests: dict[str, Queue] = {}
 
+    #I need this to keep track of who is chaning lanes
+    active_lane_changes: dict[str, int] = {}
+
     def __init__(self, name, speed, accel, pos, lane, lanePos, length):
         self.name = name
         self.speed = speed
@@ -37,6 +40,9 @@ class Vehicle:
         # print(f"Created: {name}")
 
     def __del__(self):
+
+        if self.name in self.active_lane_changes:
+            del self.active_lane_changes[self.name]     
         print(f"Deleted: {self}")
 
     def disableLaneSwitch(self, traci):
@@ -50,7 +56,7 @@ class Vehicle:
         self.lanePos = traci.vehicle.getLanePosition(self.name)
         self.length = traci.vehicle.getLength(self.name)
 
-        """ 
+        """
         avg paramters for drivers and vehicles
         TODO:
             some of these could be taken from v2v instead
@@ -65,6 +71,17 @@ class Vehicle:
 
         # change lane if necessary and send request. if ego car is sending a request, then it wants to change lane
         if self.state == VehicleState.SendingRequest:
+
+            if self.farLaneDetection(traci):
+                traci.vehicle.highlight(self.name, color=(255, 0, 0))
+                
+                self.state = VehicleState.Idle
+                if self.name in self.active_lane_changes:
+                    del self.active_lane_changes[self.name]
+                self.targetLane = 0
+                print(f"{self.name} aborting: far lane conflict.")
+                return
+
             # skip if no target lane was set
             if self.targetLane == 0:
                 self.state = VehicleState.Idle
@@ -171,7 +188,7 @@ class Vehicle:
             else:
                 self.ackCount += 1 #TODO should this be a negative
     
-    def laneChagneTest (self, traci):
+    def lanechangeTest (self, traci):
         """
         Return:
         1  -> attempt to change left
@@ -218,6 +235,8 @@ class Vehicle:
         print("started switch")
         self.targetLane = target+self.lane
 
+        self.active_lane_changes[self.name] = self.targetLane
+
     def laneSwitch(self, traci):
         self.state = VehicleState.Idle
 
@@ -225,6 +244,10 @@ class Vehicle:
         traci.vehicle.changeLane(
             vehID=self.name, laneIndex=self.targetLane, duration=2.0
         )
+
+        if self.name in self.active_lane_changes:
+            del self.active_lane_changes[self.name]
+
         self.targetLane = 0
     
 
@@ -298,6 +321,64 @@ class Vehicle:
 
         delta_d_xoh = c_style*v_h*t_xosafe
         return delta_d_xoh
+    
+
+    def farLaneDetection(self, traci):
+        """
+        This function checks the lane over from the target lane for vehicles that want to
+        change lane, and if so we will yield to them.
+        """
+        
+        direction = 1 if self.targetLane > self.lane else -1
+        lane_index = self.targetLane + direction
+
+        lane_id = traci.vehicle.getRoadID(self.name)
+        try:
+            num_lanes = traci.edge.getLaneNumber(lane_id)
+        
+        except traci.exceptions.TraCIException:
+            return False
+        
+        if lane_index < 0 or lane_index >= num_lanes:
+            return False
+        
+        far_lane_id = f"{lane_id}_{lane_index}"
+
+        try:
+            vehicle_index_far_lane = traci.lane.getLastStepVehicleIDs(far_lane_id)
+        except traci.exceptions.TraCIException:
+            return False
+        
+        for veh_id in vehicle_index_far_lane:
+            try:
+                if veh_id in self.active_lane_changes and self.active_lane_changes[veh_id] == self.targetLane:
+                    other_pos = traci.vehicle.getLanePosition(veh_id)
+                    other_speed = traci.vehicle.getSpeed(veh_id)
+                    
+                    dist = other_pos - self.lanePos
+                    is_conflict = False
+                    
+                    if dist < 0: 
+                        safe_dist = self.findRTsafeDist(other_speed, self.speed, 1)
+                        if abs(dist) < safe_dist:
+                            is_conflict = True
+                    else:
+                        
+                        
+                        safe_dist = self.findLTsafeDist(other_speed, self.speed, 1) 
+                        if abs(dist) < safe_dist:
+                            is_conflict = True
+                            
+                    if is_conflict:
+                        
+                        #we could change this to be smarter but it just chooses the vehicle with the higher ID to yield
+                        if self.name > veh_id:
+                            return True
+
+            except traci.exceptions.TraCIException:
+                continue
+        
+        return False
 
     def checkRightLanePass(self, traci):
         changeLane =0

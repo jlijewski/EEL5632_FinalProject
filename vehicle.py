@@ -15,7 +15,16 @@ class VehicleState(Enum):
 #     Two = "E1_2"
 #     Three = "E1_3"
 #     Four = "E1_4"
-
+class Packet:
+    def __init__(self, sender, type, reportedSpeed, distance, accel=None, pos=None, lane=None):
+        self.sender = sender
+        # Type is R for request, A for Ack
+        self.type = type
+        self.speed = reportedSpeed
+        self.distance = distance
+        self.accel = accel
+        self.pos = pos
+        self.lane = lane
 
 class Vehicle:
 
@@ -93,83 +102,111 @@ class Vehicle:
             vehLT = ("",-1) if not vehLTList else min(vehLTList, key=lambda x: x[1])
 
             """
-            Send Request a lane change from the closest vehicles. if RT vehicle agrees, set its max headway and decel
+            Send a request packet for lane change from the closest vehicles. if RT vehicle agrees, set its max headway and decel
             TODO: need additional acks for other neighbor cars using the appropriate safe dist method. 
             each safe dist smaller than the distance between the ego car and the neighbor
             """
             requestsSent = 0
-            # request target side rear
+
+            # Packet request to target rear car
             if vehRT[0]:
-                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
-                self.vehicle_requests[vehRT[0]].put(self.name + "/R")
-                #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
-                RTsafeDist = self.findRTsafeDist(traci.vehicle.getSpeed(vehRT[0]), self.speed, 1)
-                if vehRT[1] > RTsafeDist:
-                    requestsSent+=1
-            # request from taregt side lead
+                requestPacket = Packet(
+                    sender=self.name,
+                    type="R",
+                    reportedSpeed=self.speed,
+                    distance=vehRT[1],
+                    accel=self.accel,
+                    pos=self.pos,
+                    lane=self.lane
+                )
+                self.vehicle_requests[vehRT[0]].put(requestPacket)
+                requestsSent += 1
+
+            # request packet to target leader
             if vehLT[0]:
-                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
-                self.vehicle_requests[vehLT[0]].put(self.name + "/R")
-                #TODO: below line is ideally done by Lt car? or Lt car can do the check between safe dist and current dist
-                RTsafeDist = self.findLTsafeDist(traci.vehicle.getSpeed(vehLT[0]), self.speed, 1)
-                if vehRT[1] > RTsafeDist:
-                    requestsSent+=1
-            #request from original lane follower
+                requestPacket = Packet(
+                    sender=self.name,
+                    type="R",
+                    reportedSpeed=self.speed,
+                    distance=vehLT[1],
+                    accel=self.accel,
+                    pos=self.pos,
+                    lane=self.lane
+                )
+                self.vehicle_requests[vehLT[0]].put(requestPacket)
+                requestsSent += 1
+
+            # Packet request to rear in og lane
             if vehRO[0]:
-                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
-                self.vehicle_requests[vehRO[0]].put(self.name + "/R")
-                #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
+                requestPacket = Packet(
+                    sender=self.name,
+                    type="R",
+                    reportedSpeed=self.speed,
+                    distance=vehRO[1],
+                    accel=self.accel,
+                    pos=self.pos,
+                    lane=self.lane
+                )
+                self.vehicle_requests[vehRO[0]].put(requestPacket)
+                requestsSent += 1
 
-                ROsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehRO[0]), 1.8, 1)
-                if vehRO[1] > ROsafeDist:
-                    requestsSent+=1
-            # request to car infront of ego veh in original lane
+            # packet reqest to leader in original lane
             if vehLO[0]:
-                # NOTE: ensure vehicle queue exists for that vehicle (created on depart)
-                self.vehicle_requests[vehLO[0]].put(self.name + "/R")
-                #TODO: below line is ideally done by rt car? or rt car can do the check between safe dist and current dist
-                LOsafeDist = self.findXOsafeDist(traci.vehicle.getSpeed(vehLO[0]), 1.8, 1)
-                if vehLO[1] > LOsafeDist:
-                    # self.ackCount += 1
-                    requestsSent+=1
+                requestPacket = Packet(
+                    sender=self.name,
+                    type="R",
+                    reportedSpeed=self.speed,
+                    distance=vehLO[1],
+                    accel=self.accel,
+                    pos=self.pos,
+                    lane=self.lane
+                )
+                self.vehicle_requests[vehLO[0]].put(requestPacket)
+                requestsSent += 1
 
-            '''if all neighbors agree on request, do lane change'''
-            # if there are no neighbor cars, do lane change
-            if requestsSent ==0:
+            # Processes Acks and do lane changes
+            if requestsSent == 0:
+                # No neighbor cars, free to change lanes
                 self.laneSwitch(traci)
-            # check that the number of requests sent is same as requests returned
             elif self.ackCount == requestsSent:
-                # keep the RT vehicle at the expected headway and prevent random acceleration
-                if vehRT[0]:
-                    thw = vehRT[1]/traci.vehicle.getSpeed(vehRT[0])
-                    # check if the current headway is smaller than safe headway
-                    # TODO: should I do this for all lanes? Probably just maintain gap for all, not change it 
-                    if thw<t_rdsafe:
-                        traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 5.0, changeRate = a_rdcon, referenceVehID=self.name)
-                    else:
-                        #maintain current headway
-                        traci.vehicle.openGap(vehID = vehRT[0], newTimeHeadway=thw, newSpaceHeadway=vehRT[1],duration=5.0, changeRate=0.5)
+                # all requests have been acknowledge, change lane
                 self.laneSwitch(traci)
             else:
-                # if there are unreturned requests, continue to wait
+                # not all acks have been recieved
                 self.state = VehicleState.WaitingOnAck
-
+    
         elif self.state == VehicleState.WaitingOnAck:
-            # if all acks are in, do lane switch, otherwise keep waiting
             if self.ackCount == 0:
-                #TODO: extra safety check?
                 self.laneSwitch(traci)
             else:
                 self.state = VehicleState.WaitingOnAck
 
-        # process incomming request and ack
+        # Process packet requests by sending an ack
         while not self.vehicle_requests[self.name].empty():
-            item = self.vehicle_requests[self.name].get_nowait()
-            stringParts = item.split("/")
-            if stringParts[1] == "R":
-                self.vehicle_requests[stringParts[0]].put(self.name + "/A")
-            else:
-                self.ackCount += 1 #TODO should this be a negative
+            packet = self.vehicle_requests[self.name].get_nowait()
+            
+            if packet.type == "R":
+                # send back the needed info to check if the lane change is safe
+                safeDistCheck = self.findRTsafeDist(packet.speed, self.speed, 1)
+                if packet.distance > safeDistCheck and packet.accel <= self.accel:
+                    ackPacket = Packet(
+                        sender=self.name,
+                        type="A",
+                        reportedSpeed=self.speed,
+                        distance=packet.distance,
+                        accel=self.accel,
+                        pos=self.pos,
+                        lane=self.lane
+                    )
+                    self.vehicle_requests[packet.sender].put(ackPacket)
+            
+            elif packet.type == "A":
+                self.ackCount -= 1
+            
+            elif packet.type == "D":
+                print(f"Lane change denied by {packet.sender}")
+                self.state = VehicleState.Idle
+                self.ackCount = 0
     
     def laneChagneTest (self, traci):
         """
@@ -215,7 +252,7 @@ class Vehicle:
     
     def laneSwitchStart(self, target):
         self.state = VehicleState.SendingRequest
-        print("started switch")
+        # print("started switch")
         self.targetLane = target+self.lane
 
     def laneSwitch(self, traci):

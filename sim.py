@@ -98,4 +98,4 @@ if travel_times:
     print(f"Vehicles Arrived: {len(travel_times)}")
 else:
     #hopefully this never happens lol
-    print("No vehicles completed their journey.")
+    print("No vehicles arrived.")

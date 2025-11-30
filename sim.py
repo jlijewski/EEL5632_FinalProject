@@ -35,14 +35,28 @@ traci.start(Sumo_config)
 vehicle_speed = 0
 total_speed = 0
 
+# Metrics declaration
+departure_times = {}
+travel_times = []
+colliding_vehicles = set()
+
 # Step 7: Define Functions
 vehicles = {}
 
 # Step 8: Take simulation steps until there are no more vehicles in the network
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep()  # Move simulation forward 1 step
+    
+    # This tracks the collisions
+    colliding_ids = traci.simulation.getCollidingVehiclesIDList()
+    for vid in colliding_ids:
+        colliding_vehicles.add(vid)
+
     # Here you can decide what to do with simulation data at each step
     for newVeh in traci.simulation.getDepartedIDList():
+        # Starts tracking vehicle time
+        departure_times[newVeh] = traci.simulation.getTime()
+        
         vehicles[newVeh] = Vehicle(
             newVeh,
             traci.vehicle.getSpeed(newVeh),
@@ -64,8 +78,24 @@ while traci.simulation.getMinExpectedNumber() > 0:
         vehicles[currVeh].update(traci)
 
     for oldVeh in traci.simulation.getArrivedIDList():
-        del vehicles[oldVeh]
+        #Instead of just deleting the vehicle we'll stop the timer there and then delete
+        if oldVeh in departure_times:
+            travel_time = traci.simulation.getTime() - departure_times[oldVeh]
+            travel_times.append(travel_time)
+            del departure_times[oldVeh]
+        if oldVeh in vehicles:
+            del vehicles[oldVeh]
 
 
 # Step 9: Close connection between SUMO and Traci
 traci.close()
+
+# Step 10: Print out the metrics (Theres probably a better way to do this but a print statement works right this second)
+print(f"Simulation Metrics \n Vehicles Involved in Collisions: {len(colliding_vehicles)}")
+if travel_times:
+    avg_time = sum(travel_times) / len(travel_times)
+    print(f"Average Travel Time (in seconds): {avg_time:.2f} seconds")
+    print(f"Vehicles Arrived: {len(travel_times)}")
+else:
+    #hopefully this never happens lol
+    print("No vehicles completed their journey.")

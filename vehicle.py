@@ -157,15 +157,20 @@ class Vehicle:
             # check that the number of requests sent is same as requests returned
             elif self.ackCount == requestsSent:
                 # keep the RT vehicle at the expected headway and prevent random acceleration
+
+                # This block had a divide by zero issue, so I added a check to make sure the speed is greater than 0
                 if vehRT[0]:
-                    thw = vehRT[1]/traci.vehicle.getSpeed(vehRT[0])
-                    # check if the current headway is smaller than safe headway
-                    # TODO: should I do this for all lanes? Probably just maintain gap for all, not change it 
-                    if thw<t_rdsafe:
-                        traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 5.0, changeRate = a_rdcon, referenceVehID=self.name)
+                    if traci.vehicle.getSpeed(vehRT[0]) >0:
+                        thw = vehRT[1]/traci.vehicle.getSpeed(vehRT[0])
+                        # check if the current headway is smaller than safe headway
+                        # TODO: should I do this for all lanes? Probably just maintain gap for all, not change it 
+                        if thw<t_rdsafe:
+                            traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= RTsafeDist, duration = 5.0, changeRate = a_rdcon, referenceVehID=self.name)
+                        else:
+                            #maintain current headway
+                            traci.vehicle.openGap(vehID = vehRT[0], newTimeHeadway=thw, newSpaceHeadway=vehRT[1],duration=5.0, changeRate=0.5)
                     else:
-                        #maintain current headway
-                        traci.vehicle.openGap(vehID = vehRT[0], newTimeHeadway=thw, newSpaceHeadway=vehRT[1],duration=5.0, changeRate=0.5)
+                        traci.vehicle.openGap(vehID = vehRT[0], newTimeHeadway=1000.0, newSpaceHeadway=vehRT[1],duration=5.0, changeRate=0.1)
                 self.laneSwitch(traci)
             else:
                 # if there are unreturned requests, continue to wait

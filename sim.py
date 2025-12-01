@@ -38,21 +38,10 @@ total_speed = 0
 # Step 7: Define Functions
 vehicles = {}
 
-changeLaneTest = False
-
-currSimStep = 0
-totalTimeSpent = 1.0
-totalVeh = 1.0
-avgTime = 1.0
-
 # Step 8: Take simulation steps until there are no more vehicles in the network
 while traci.simulation.getMinExpectedNumber() > 0:
     traci.simulationStep()  # Move simulation forward 1 step
-    currSimStep += 1
     # Here you can decide what to do with simulation data at each step
-    if random.randint(1, 30) == 7:
-        changeLaneTest = True
-
     for newVeh in traci.simulation.getDepartedIDList():
         vehicles[newVeh] = Vehicle(
             newVeh,
@@ -62,28 +51,21 @@ while traci.simulation.getMinExpectedNumber() > 0:
             traci.vehicle.getLaneIndex(newVeh),
             traci.vehicle.getLanePosition(newVeh),
             traci.vehicle.getLength(newVeh),
-            currSimStep
         )
         vehicles[newVeh].disableLaneSwitch(traci)
-        
 
     for currVeh in traci.vehicle.getIDList():
-        if changeLaneTest == True:
-            if vehicles[currVeh].targetLane == -1:
-                if vehicles[currVeh].lane == 4:
-                    vehicles[currVeh].laneSwitchStart(3)
-                else:
-                    vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lane + 1)
-
-            changeLaneTest = False
+        # see if ego vehcile is in a case to switch lanes
+        if vehicles[currVeh].laneChagneTest(traci) !=0:
+            # request lane change, changes vehicle state
+            vehicles[currVeh].laneSwitchStart(vehicles[currVeh].laneChagneTest(traci))
+        
+        # update does actual lane change
         vehicles[currVeh].update(traci)
 
     for oldVeh in traci.simulation.getArrivedIDList():
-        
-        totalTimeSpent += (currSimStep - vehicles[oldVeh].startTime)
-        totalVeh += 1
         del vehicles[oldVeh]
 
-print(totalTimeSpent/totalVeh)
+
 # Step 9: Close connection between SUMO and Traci
 traci.close()

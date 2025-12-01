@@ -1,5 +1,5 @@
 <routes>
-    <vType id="car" accel="2.6" decel="4.5" length="5" maxSpeed="40" speedFactor="norm(1.0, 0.4)"/>
+    <vType id="car" accel="2.6" decel="4.5" length="5" maxSpeed="40" speedFactor="norm(1.0, 0.2)"/>
     <route id="r_east" edges="E1" />
    
     <flow id="f_east" type="car" route="r_east" begin="0" end="3600" period="1.5" 

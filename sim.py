@@ -36,7 +36,7 @@ vehicle_speed = 0
 total_speed = 0
 
 
-LYING_ENABLED = True  
+LYING_ENABLED = False  
 LYING_CHANCE = 0.3   
 
 # Metrics declaration
@@ -61,8 +61,6 @@ try:
         for newVeh in traci.simulation.getDepartedIDList():
             # Starts tracking vehicle time
             departure_times[newVeh] = traci.simulation.getTime()
-            
-           
             lying_factor = 0
             if LYING_ENABLED and random.random() < LYING_CHANCE:
                 lying_factor = 1
@@ -71,6 +69,7 @@ try:
                 newVeh,
                 traci.vehicle.getSpeed(newVeh),
                 traci.vehicle.getAcceleration(newVeh),
+                traci.vehicle.getDecel(newVeh),
                 traci.vehicle.getPosition(newVeh),
                 traci.vehicle.getLaneIndex(newVeh),
                 traci.vehicle.getLanePosition(newVeh),
@@ -81,9 +80,9 @@ try:
 
         for currVeh in traci.vehicle.getIDList():
             # see if ego vehcile is in a case to switch lanes
-            if vehicles[currVeh].lanechangeTest(traci) !=0:
+            if vehicles[currVeh].laneChagneTest(traci) !=0:
                 # request lane change, changes vehicle state
-                vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lanechangeTest(traci))
+                vehicles[currVeh].laneSwitchStart(vehicles[currVeh].laneChagneTest(traci))
             
             # update does actual lane change
             vehicles[currVeh].update(traci)

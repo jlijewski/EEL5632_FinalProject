@@ -132,7 +132,6 @@ class Vehicle:
             # Goal: send request to 6 neighbor cars, follower/leader in target lane and follower/leader in original lane
             if self.farLaneDetection(traci):
                 traci.vehicle.highlight(self.name, color=(255, 0, 0))
-                
                 self.state = VehicleState.Idle
                 if self.name in self.active_lane_changes:
                     del self.active_lane_changes[self.name]
@@ -219,14 +218,15 @@ class Vehicle:
                 # Read packets containing info requested from a neighbor car wanting to change lanes
 
                 # the packet is from an neighbor, set the distance extremly large to prevent lane change
-                safeDistCheck = float('inf')
+                safeDistance = float('inf')
+                safeDistCheck = True
                 if packet.neighbor == 0 and self.state != VehicleState.ChangingLane:
                     # packet.[data] is from the car trying to get over, self.[data] is from a neighbor car
                     # Response from RT neighbor
-                    safeDistCheck = self.findRTsafeDist(self.speed, packet.speed, self.decel, 1)
-                    self.delta_d_rt = safeDistCheck
+                    safeDistance = self.findRTsafeDist(self.speed, packet.speed, self.decel, 1)
+                    self.delta_d_rt = safeDistance
                 elif packet.neighbor == 1 and self.state != VehicleState.ChangingLane:
-                    safeDistCheck = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, 1)
+                    safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, 1)
                 elif packet.neighbor == 2: 
                     # packet reponse is from original lane follower
                     #temp_vehRO = traci.vehicle.getFollower(self.name) or ["",-1]
@@ -234,7 +234,7 @@ class Vehicle:
                     # if temp_vehRO[0]:
                     #     gap = temp_vehRO[1]
                     headway = packet.reportedGap / packet.speed if packet.speed > 0 else float('inf')
-                    safeDistCheck = self.findXOsafeDist(packet.speed, headway,1)
+                    safeDistance = self.findXOsafeDist(packet.speed, headway,1)
                 elif packet.neighbor == 3:
                     # packet reponse is from original lane leader
                     #temp_vehLO = traci.vehicle.getLeader(self.name) or ["",-1]
@@ -242,8 +242,11 @@ class Vehicle:
                     # if temp_vehLO[0]:
                     #     gap = temp_vehLO[1]
                     headway = packet.reportedGap / packet.speed if packet.speed > 0 else float('inf')
-                    safeDistCheck = self.findXOsafeDist(packet.speed, headway,1)
+                    safeDistance = self.findXOsafeDist(packet.speed, headway,1)
                     
+                if packet.reportedGap > safeDistance:
+                    safeDistCheck = True
+
                 infoPacket = ReturnPacket(
                     sender=self.name,
                     type="A",
@@ -255,7 +258,7 @@ class Vehicle:
                 self.vehicle_requests[packet.sender].put(infoPacket)
             
             elif packet.type == "A":
-                if packet.reportedGap > packet.safeDistance:
+                if packet.safeDistance:
                     self.ackCount += 1
                 else: 
                     # if any gap is too small, then cancel requests
@@ -428,11 +431,9 @@ class Vehicle:
             try:
                 if veh_id in self.active_lane_changes:
                     target_lane, lying_factor = self.active_lane_changes[veh_id]
-                    
                     if target_lane == self.targetLane:
                         other_pos = traci.vehicle.getLanePosition(veh_id)
                         other_speed = traci.vehicle.getSpeed(veh_id)
-
                         other_speed -= (lying_factor * 20)
                         
                         dist = other_pos - self.lanePos

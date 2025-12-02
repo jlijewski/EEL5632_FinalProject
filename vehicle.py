@@ -7,6 +7,7 @@ class VehicleState(Enum):
     Idle = 1
     SendingRequest = 2
     WaitingOnAck = 3
+    ChangingLane = 4
 
 
 # class Lanes(Enum):
@@ -15,25 +16,41 @@ class VehicleState(Enum):
 #     Two = "E1_2"
 #     Three = "E1_3"
 #     Four = "E1_4"
-class Packet:
-    def __init__(self, sender, type, reportedSpeed, distance, accel=None, pos=None, lane=None):
+class ReturnPacket:
+    def __init__(self, sender, type, neighbor, state, reportedSpeed, distance, accel=None, decel = None, pos=None, lane=None):
         self.sender = sender
         # Type is R for request, A for Ack
         self.type = type
+        self.neighbor = neighbor
+        self.state = state
         self.speed = reportedSpeed
         self.distance = distance
         self.accel = accel
+        self.decel = decel
         self.pos = pos
         self.lane = lane
+class RequestPacket:
+    def __init__(self, sender, type, neighbor, distance):
+        self.sender = sender
+        self.type = type
+        self.neighbor = neighbor
+        self.distance = distance
+class ConfirmPacket:
+    def __init__(self, sender, type, neighbor, isGettingOver):
+        self.sender = sender
+        self.type = type
+        self.neighbor = neighbor
+        self.isGettingOver = isGettingOver
 
 class Vehicle:
 
     vehicle_requests: dict[str, Queue] = {}
 
-    def __init__(self, name, speed, accel, pos, lane, lanePos, length):
+    def __init__(self, name, speed, accel, decel, pos, lane, lanePos, length):
         self.name = name
         self.speed = speed
         self.accel = accel
+        self.decel = decel
         self.pos = pos
         self.lane = lane
         self.lanePos = lanePos
@@ -41,6 +58,7 @@ class Vehicle:
         self.targetLane = 0
         self.state = VehicleState.Idle
         self.vehicle_requests[self.name] = Queue()
+        self.delta_d_rt = 0 
         self.ackCount = 0
         # TODO : consider adding cstyle as attribute of veh
         # print(f"Created: {name}")
@@ -54,6 +72,7 @@ class Vehicle:
     def update(self, traci):
         self.speed = traci.vehicle.getSpeed(self.name)
         self.accel = traci.vehicle.getAcceleration(self.name)
+        self.decel = traci.vehicle.getDecel(self.name)
         self.pos = traci.vehicle.getPosition(self.name)
         self.lane = traci.vehicle.getLaneIndex(self.name)
         self.lanePos = traci.vehicle.getLanePosition(self.name)
@@ -72,8 +91,14 @@ class Vehicle:
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
 
-        # change lane if necessary and send request. if ego car is sending a request, then it wants to change lane
-        if self.state == VehicleState.SendingRequest:
+        current_lane = traci.vehicle.getLaneIndex(self.name)
+        if self.state == VehicleState.ChangingLane:
+            # Check if lane change finished
+            if current_lane == self.targetLane:
+                self.state = VehicleState.Idle
+                self.targetLane = 0
+        elif self.state == VehicleState.SendingRequest:
+            # change lane if necessary and send request. if ego car is sending a request, then it wants to change lane
             # skip if no target lane was set
             if self.targetLane == 0:
                 self.state = VehicleState.Idle
@@ -110,56 +135,44 @@ class Vehicle:
 
             # Packet request to target rear car
             if vehRT[0]:
-                requestPacket = Packet(
+                requestPacket = RequestPacket(
                     sender=self.name,
                     type="R",
-                    reportedSpeed=self.speed,
-                    distance=vehRT[1],
-                    accel=self.accel,
-                    pos=self.pos,
-                    lane=self.lane
+                    neighbor = 0,
+                    distance=vehRT[1]
                 )
                 self.vehicle_requests[vehRT[0]].put(requestPacket)
                 requestsSent += 1
 
             # request packet to target leader
             if vehLT[0]:
-                requestPacket = Packet(
+                requestPacket = RequestPacket(
                     sender=self.name,
                     type="R",
-                    reportedSpeed=self.speed,
-                    distance=vehLT[1],
-                    accel=self.accel,
-                    pos=self.pos,
-                    lane=self.lane
+                    neighbor = 1,
+                    distance=vehLT[1]
                 )
                 self.vehicle_requests[vehLT[0]].put(requestPacket)
                 requestsSent += 1
 
             # Packet request to rear in og lane
             if vehRO[0]:
-                requestPacket = Packet(
+                requestPacket = RequestPacket(
                     sender=self.name,
                     type="R",
-                    reportedSpeed=self.speed,
-                    distance=vehRO[1],
-                    accel=self.accel,
-                    pos=self.pos,
-                    lane=self.lane
+                    neighbor = 2,
+                    distance=vehRO[1]
                 )
                 self.vehicle_requests[vehRO[0]].put(requestPacket)
                 requestsSent += 1
 
             # packet reqest to leader in original lane
             if vehLO[0]:
-                requestPacket = Packet(
+                requestPacket = RequestPacket(
                     sender=self.name,
                     type="R",
-                    reportedSpeed=self.speed,
-                    distance=vehLO[1],
-                    accel=self.accel,
-                    pos=self.pos,
-                    lane=self.lane
+                    neighbor = 3,
+                    distance=vehLO[1]
                 )
                 self.vehicle_requests[vehLO[0]].put(requestPacket)
                 requestsSent += 1
@@ -170,43 +183,80 @@ class Vehicle:
                 self.laneSwitch(traci)
             elif self.ackCount == requestsSent:
                 # all requests have been acknowledge, change lane
+                # set gap for rear car in target lane
+                if vehRT[0]:
+                    traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= self.delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                 self.laneSwitch(traci)
             else:
                 # not all acks have been recieved
                 self.state = VehicleState.WaitingOnAck
     
         elif self.state == VehicleState.WaitingOnAck:
-            if self.ackCount == 0:
-                self.laneSwitch(traci)
-            else:
-                self.state = VehicleState.WaitingOnAck
+            #keep waiting
+            self.state = VehicleState.WaitingOnAck
 
-        # Process packet requests by sending an ack
+        # Ego car responds to packets
         while not self.vehicle_requests[self.name].empty():
+            # get the next packet in the queue
             packet = self.vehicle_requests[self.name].get_nowait()
             
+            # respond to packets requesting info
             if packet.type == "R":
                 # send back the needed info to check if the lane change is safe
-                safeDistCheck = self.findRTsafeDist(packet.speed, self.speed, 1)
-                if packet.distance > safeDistCheck and packet.accel <= self.accel:
-                    ackPacket = Packet(
-                        sender=self.name,
-                        type="A",
-                        reportedSpeed=self.speed,
-                        distance=packet.distance,
-                        accel=self.accel,
-                        pos=self.pos,
-                        lane=self.lane
-                    )
-                    self.vehicle_requests[packet.sender].put(ackPacket)
+                # safeDistCheck = self.findRTsafeDist(packet.speed, self.speed, packet.decel, self.decel, 1)
+                #if packet.distance > safeDistCheck and packet.accel <= self.accel:
+                infoPacket = ReturnPacket(
+                    sender=self.name,
+                    type="A",
+                    neighbor = packet.neighbor,
+                    state = self.state,
+                    reportedSpeed=self.speed,
+                    distance=packet.distance,
+                    accel=self.accel,
+                    decel = self.decel,
+                    pos=self.pos,
+                    lane=self.lane
+                )
+                self.vehicle_requests[packet.sender].put(infoPacket)
             
             elif packet.type == "A":
-                self.ackCount -= 1
+                # Read packets containing info requested from neighbor cars and determine if getting over is possible
+                # the packet is from an unknown neighbor, set the distance extremly large to prevent lane change
+                safeDistCheck = float('inf')
+                if packet.neighbor == 0 and packet.state != VehicleState.ChangingLane:
+                    # Response from RT neighbor
+                    safeDistCheck = self.findRTsafeDist(packet.speed, self.speed, packet.decel, 1)
+                    delta_d_rt = safeDistCheck
+                elif packet.neighbor ==1 and packet.state != VehicleState.ChangingLane:
+                    safeDistCheck = self.findLTsafeDist(packet.speed, self.speed, packet.decel, self.decel, 1)
+                elif packet.neighbor == 2: 
+                    # packet reponse is from original lane follower
+                    temp_vehRO = traci.vehicle.getFollower(self.name) or ["",-1]
+                    # We can do a check here to see if its still the same neighbor
+                    if temp_vehRO[0]:
+                        gap = temp_vehRO[1]
+                        headway = gap / self.speed if self.speed > 0 else float('inf')
+                        safeDistCheck = self.findXOsafeDist(self.speed, headway,1)
+                elif packet.neighbor == 3:
+                    # packet reponse is from original lane leader
+                    temp_vehLO = traci.vehicle.getLeader(self.name) or ["",-1]
+                    # We can do a check here to see if its still the same neighbor
+                    if temp_vehLO[0]:
+                        gap = temp_vehLO[1]
+                        headway = gap / self.speed if self.speed > 0 else float('inf')
+                        safeDistCheck = self.findXOsafeDist(self.speed, headway,1)
+                    
+                if packet.distance > safeDistCheck:
+                    self.ackCount += 1
+                else: 
+                    # if any gap is too small, then cancel requests
+                    self.ackCount = 0
+                    self.state = VehicleState.Idle
             
-            elif packet.type == "D":
-                print(f"Lane change denied by {packet.sender}")
-                self.state = VehicleState.Idle
-                self.ackCount = 0
+            # elif packet.type == "D":
+            #     print(f"Lane change denied by {packet.sender}")
+            #     self.state = VehicleState.Idle
+            #     self.ackCount = 0
     
     def laneChagneTest (self, traci):
         """
@@ -231,9 +281,9 @@ class Vehicle:
                 if leaderSpeed < self.speed and (leaderAcc - self.accel) < 0:
                     # pass if left lane is empty 
                     # or pass if gap is big enough
-                    changeLane = self.checkLeftLanePass(traci)
+                    changeLane = 1
 
-        # Change to right lane, cant already be in right msot lane
+        # Change to right lane, cant already be in right most lane
         if self.lane > 0:
             # move for faster veh: if goal speed of following veh in same lane is faster, get over to right
             vehRO = traci.vehicle.getFollower(self.name)
@@ -247,7 +297,7 @@ class Vehicle:
                 SPEED_THRESHOLD = 0.5  # m/s
                 # compare goal speeds of ego and following vehicle (maxSpeed*speedFactor)
                 if rf_goal > ego_goal + SPEED_THRESHOLD:
-                    changeLane = self.checkRightLanePass(traci)
+                    changeLane = -1
         return changeLane
     
     def laneSwitchStart(self, target):
@@ -257,15 +307,17 @@ class Vehicle:
 
     def laneSwitch(self, traci):
         self.state = VehicleState.Idle
+        self.ackCount = 0
 
         print("CHANGED LANE")
         traci.vehicle.changeLane(
             vehID=self.name, laneIndex=self.targetLane, duration=2.0
         )
+        self.state = VehicleState.ChangingLane  # Set to changing state
         self.targetLane = 0
     
 
-    def findRTsafeDist(self,v_rd, v_k, c_style):
+    def findRTsafeDist(self,v_rd, v_k, rt_decel,c_style):
         """
         Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
         Based on: 
@@ -288,7 +340,7 @@ class Vehicle:
         
         # Find min safe distance between ego and rear
         if v_rd -v_k >=-5:
-            t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_k)**2/(2*a_rdcon) + c_style*t_rdsafe*v_rd
+            t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_k)**2/(2*rt_decel) + c_style*t_rdsafe*v_rd
             t2 = c_style*t_rdsafe*v_rd
             delta_d_mrdh = max(t1, t2)
         else:
@@ -296,7 +348,7 @@ class Vehicle:
         return delta_d_mrdh
 
 
-    def findLTsafeDist(self, v_ld, v_h, c_style):
+    def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel,c_style):
         """
         Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
         From eq (16)
@@ -315,10 +367,10 @@ class Vehicle:
         t_ldsafe = 1.8 # rear vehicle time headway
         a_ldcon = 2 # max deceleration of rear vehicle in target lane
         # TODO!! IDK how to find this value, this is a place holder, need to examine paper
-        a_hmax = 2.5 
+        a_hmax = 2.5
         a_ldmax = 2.5
 
-        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(a_hmax) -c_style*v_ld**2/(2*a_ldmax)
+        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
         t2 = c_style*v_h*t_ldsafe
         delta_d_mldh = min(t1,t2)
         return delta_d_mldh
@@ -360,10 +412,10 @@ class Vehicle:
             changeLane = 1
         return changeLane
     
-    def getTimeHeadway(self,traci,followerID, lookahead=100.0):
-        leader_info = traci.vehicle.getLeader(followerID, lookahead)
-        if leader_info is None:
-            return None  # no leader ahead
-        leaderID, gap = leader_info
-        speed = traci.vehicle.getSpeed(followerID)
-        return gap / speed if speed > 0 else float('inf')
+    # def getTimeHeadway(self,traci,followerID, lookahead=100.0):
+    #     #leader_info = traci.vehicle.getLeader(followerID, lookahead)
+    #     if leader_info is None:
+    #         return None  # no leader ahead
+    #     leaderID, gap = leader_info
+    #     speed = traci.vehicle.getSpeed(followerID)
+    #     return gap / speed if speed > 0 else float('inf')

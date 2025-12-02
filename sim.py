@@ -47,6 +47,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
             newVeh,
             traci.vehicle.getSpeed(newVeh),
             traci.vehicle.getAcceleration(newVeh),
+            traci.vehicle.getDecel(newVeh),
             traci.vehicle.getPosition(newVeh),
             traci.vehicle.getLaneIndex(newVeh),
             traci.vehicle.getLanePosition(newVeh),

@@ -35,6 +35,10 @@ traci.start(Sumo_config)
 vehicle_speed = 0
 total_speed = 0
 
+
+LYING_ENABLED = True  
+LYING_CHANCE = 0.3   
+
 # Metrics declaration
 departure_times = {}
 travel_times = []
@@ -58,6 +62,11 @@ try:
             # Starts tracking vehicle time
             departure_times[newVeh] = traci.simulation.getTime()
             
+           
+            lying_factor = 0
+            if LYING_ENABLED and random.random() < LYING_CHANCE:
+                lying_factor = 1
+
             vehicles[newVeh] = Vehicle(
                 newVeh,
                 traci.vehicle.getSpeed(newVeh),
@@ -66,6 +75,7 @@ try:
                 traci.vehicle.getLaneIndex(newVeh),
                 traci.vehicle.getLanePosition(newVeh),
                 traci.vehicle.getLength(newVeh),
+                lyingFactor=lying_factor
             )
             vehicles[newVeh].disableLaneSwitch(traci)
 

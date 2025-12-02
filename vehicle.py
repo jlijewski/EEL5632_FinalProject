@@ -34,9 +34,12 @@ class Vehicle:
     vehicle_requests: dict[str, Queue] = {}
 
     #I need this to keep track of who is chaning lanes
-    active_lane_changes: dict[str, int] = {}
+    active_lane_changes: dict[str, tuple[int, int]] = {}
+    
+    
+    vehicle_lying_factors: dict[str, int] = {}
 
-    def __init__(self, name, speed, accel, pos, lane, lanePos, length):
+    def __init__(self, name, speed, accel, pos, lane, lanePos, length, lyingFactor=0):
         self.name = name
         self.speed = speed
         self.accel = accel
@@ -49,13 +52,17 @@ class Vehicle:
         self.vehicle_requests[self.name] = Queue()
         self.ackCount = 0
         self.requestsSent = 0
+        self.lyingFactor = lyingFactor # 0 for honest, 1 for lying
+        self.vehicle_lying_factors[self.name] = self.lyingFactor
         # TODO : consider adding cstyle as attribute of veh
         # print(f"Created: {name}")
 
     def __del__(self):
 
         if self.name in self.active_lane_changes:
-            del self.active_lane_changes[self.name]     
+            del self.active_lane_changes[self.name]
+        if self.name in self.vehicle_lying_factors:
+            del self.vehicle_lying_factors[self.name]
         print(f"Deleted: {self}")
 
     def disableLaneSwitch(self, traci):
@@ -129,9 +136,16 @@ class Vehicle:
             """
             self.requestsSent = 0
             
+            if self.lyingFactor == 1:
+                traci.vehicle.highlight(self.name, color=(255, 0, 0))
+
             def send_pkt(target_id, dist):
                 if target_id:
-                    pkt = Packet(self.name, "R", self.speed, dist, self.accel, self.pos, self.lane)
+                    reported_speed = self.speed - (self.lyingFactor * 20)
+                    reported_dist = dist + (self.lyingFactor * 30)
+                    reported_accel = self.accel - (self.lyingFactor * 10)
+                    
+                    pkt = Packet(self.name, "R", reported_speed, reported_dist, reported_accel, self.pos, self.lane)
                     self.vehicle_requests[target_id].put(pkt)
                     self.requestsSent += 1
 
@@ -252,7 +266,7 @@ class Vehicle:
         print("started switch")
         self.targetLane = target+self.lane
 
-        self.active_lane_changes[self.name] = self.targetLane
+        self.active_lane_changes[self.name] = (self.targetLane, self.lyingFactor)
 
     def laneSwitch(self, traci):
         self.state = VehicleState.Idle
@@ -368,29 +382,41 @@ class Vehicle:
         
         for veh_id in vehicle_index_far_lane:
             try:
-                if veh_id in self.active_lane_changes and self.active_lane_changes[veh_id] == self.targetLane:
-                    other_pos = traci.vehicle.getLanePosition(veh_id)
-                    other_speed = traci.vehicle.getSpeed(veh_id)
+                if veh_id in self.active_lane_changes:
+                    target_lane, lying_factor = self.active_lane_changes[veh_id]
                     
-                    dist = other_pos - self.lanePos
-                    is_conflict = False
-                    
-                    if dist < 0: 
-                        safe_dist = self.findRTsafeDist(other_speed, self.speed, 1)
-                        if abs(dist) < safe_dist:
-                            is_conflict = True
-                    else:
+                    if target_lane == self.targetLane:
+                        other_pos = traci.vehicle.getLanePosition(veh_id)
+                        other_speed = traci.vehicle.getSpeed(veh_id)
                         
+                  
+                        other_speed -= (lying_factor * 20)
                         
-                        safe_dist = self.findLTsafeDist(other_speed, self.speed, 1) 
-                        if abs(dist) < safe_dist:
-                            is_conflict = True
+                        dist = other_pos - self.lanePos
+                        
+                        if dist > 0:
+                            dist += (lying_factor * 30)
+                        else:
+                            dist -= (lying_factor * 30)
+
+                        is_conflict = False
+                        
+                        if dist < 0: 
+                            safe_dist = self.findRTsafeDist(other_speed, self.speed, 1)
+                            if abs(dist) < safe_dist:
+                                is_conflict = True
+                        else:
                             
-                    if is_conflict:
-                        
-                        #we could change this to be smarter but it just chooses the vehicle with the higher ID to yield
-                        if self.name > veh_id:
-                            return True
+                            
+                            safe_dist = self.findLTsafeDist(other_speed, self.speed, 1) 
+                            if abs(dist) < safe_dist:
+                                is_conflict = True
+                                
+                        if is_conflict:
+                            
+                            #we could change this to be smarter but it just chooses the vehicle with the higher ID to yield
+                            if self.name > veh_id:
+                                return True
 
             except traci.exceptions.TraCIException:
                 continue

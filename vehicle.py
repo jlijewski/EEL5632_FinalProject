@@ -1,6 +1,8 @@
 from enum import Enum
 from queue import Queue
 
+import random
+
 
 class VehicleState(Enum):
 
@@ -108,14 +110,20 @@ class Vehicle:
             """
             requestsSent = 0
 
+            lyingFactor = self.attacker_calc()
+
+            if(lyingFactor == 1):
+                traci.vehicle.highlight(self.name, color=(255, 0, 0))
+          
+
             # Packet request to target rear car
             if vehRT[0]:
                 requestPacket = Packet(
                     sender=self.name,
                     type="R",
-                    reportedSpeed=self.speed,
-                    distance=vehRT[1],
-                    accel=self.accel,
+                    reportedSpeed=self.speed - (lyingFactor*20),
+                    distance=vehRT[1] + (lyingFactor*30),
+                    accel=self.accel - (lyingFactor*10),
                     pos=self.pos,
                     lane=self.lane
                 )
@@ -127,9 +135,9 @@ class Vehicle:
                 requestPacket = Packet(
                     sender=self.name,
                     type="R",
-                    reportedSpeed=self.speed,
-                    distance=vehLT[1],
-                    accel=self.accel,
+                    reportedSpeed=self.speed - (lyingFactor*20),
+                    distance=vehLT[1] + (lyingFactor*30),
+                    accel=self.accel - (lyingFactor*10),
                     pos=self.pos,
                     lane=self.lane
                 )
@@ -208,7 +216,7 @@ class Vehicle:
                 self.state = VehicleState.Idle
                 self.ackCount = 0
     
-    def laneChagneTest (self, traci):
+    def lanechangeTest (self, traci):
         """
         Return:
         1  -> attempt to change left
@@ -367,3 +375,7 @@ class Vehicle:
         leaderID, gap = leader_info
         speed = traci.vehicle.getSpeed(followerID)
         return gap / speed if speed > 0 else float('inf')
+    
+
+    def attacker_calc(self):
+        return 1 if random.randint(1, 10) == 1 else 0

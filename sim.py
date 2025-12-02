@@ -23,7 +23,7 @@ Sumo_config = [
     "--step-length",
     "0.05",
     "--delay",
-    "1000",
+    "1",
     "--lateral-resolution",
     "0.1",
 ]
@@ -35,37 +35,71 @@ traci.start(Sumo_config)
 vehicle_speed = 0
 total_speed = 0
 
+# Metrics declaration
+departure_times = {}
+travel_times = []
+colliding_vehicles = set()
+
 # Step 7: Define Functions
 vehicles = {}
 
 # Step 8: Take simulation steps until there are no more vehicles in the network
-while traci.simulation.getMinExpectedNumber() > 0:
-    traci.simulationStep()  # Move simulation forward 1 step
-    # Here you can decide what to do with simulation data at each step
-    for newVeh in traci.simulation.getDepartedIDList():
-        vehicles[newVeh] = Vehicle(
-            newVeh,
-            traci.vehicle.getSpeed(newVeh),
-            traci.vehicle.getAcceleration(newVeh),
-            traci.vehicle.getPosition(newVeh),
-            traci.vehicle.getLaneIndex(newVeh),
-            traci.vehicle.getLanePosition(newVeh),
-            traci.vehicle.getLength(newVeh),
-        )
-        vehicles[newVeh].disableLaneSwitch(traci)
-
-    for currVeh in traci.vehicle.getIDList():
-        # see if ego vehcile is in a case to switch lanes
-        if vehicles[currVeh].laneChagneTest(traci) !=0:
-            # request lane change, changes vehicle state
-            vehicles[currVeh].laneSwitchStart(vehicles[currVeh].laneChagneTest(traci))
+try:
+    while traci.simulation.getMinExpectedNumber() > 0:
+        traci.simulationStep()  # Move simulation forward 1 step
         
-        # update does actual lane change
-        vehicles[currVeh].update(traci)
+        # This tracks the collisions
+        colliding_ids = traci.simulation.getCollidingVehiclesIDList()
+        for vid in colliding_ids:
+            colliding_vehicles.add(vid)
 
-    for oldVeh in traci.simulation.getArrivedIDList():
-        del vehicles[oldVeh]
+        # Here you can decide what to do with simulation data at each step
+        for newVeh in traci.simulation.getDepartedIDList():
+            # Starts tracking vehicle time
+            departure_times[newVeh] = traci.simulation.getTime()
+            
+            vehicles[newVeh] = Vehicle(
+                newVeh,
+                traci.vehicle.getSpeed(newVeh),
+                traci.vehicle.getAcceleration(newVeh),
+                traci.vehicle.getPosition(newVeh),
+                traci.vehicle.getLaneIndex(newVeh),
+                traci.vehicle.getLanePosition(newVeh),
+                traci.vehicle.getLength(newVeh),
+            )
+            vehicles[newVeh].disableLaneSwitch(traci)
 
+        for currVeh in traci.vehicle.getIDList():
+            # see if ego vehcile is in a case to switch lanes
+            if vehicles[currVeh].lanechangeTest(traci) !=0:
+                # request lane change, changes vehicle state
+                vehicles[currVeh].laneSwitchStart(vehicles[currVeh].lanechangeTest(traci))
+            
+            # update does actual lane change
+            vehicles[currVeh].update(traci)
 
-# Step 9: Close connection between SUMO and Traci
-traci.close()
+        for oldVeh in traci.simulation.getArrivedIDList():
+            #Instead of just deleting the vehicle we'll stop the timer there and then delete
+            if oldVeh in departure_times:
+                travel_time = traci.simulation.getTime() - departure_times[oldVeh]
+                travel_times.append(travel_time)
+                del departure_times[oldVeh]
+            if oldVeh in vehicles:
+                del vehicles[oldVeh]
+
+except traci.exceptions.TraCIException as e:
+    print("GUI Closed")
+
+finally:
+    # Step 9: Close connection between SUMO and Traci
+    traci.close()
+
+    # Step 10: Print out the metrics (Theres probably a better way to do this but a print statement works right this second)
+    print(f"Vehicles Collided: {len(colliding_vehicles)}")
+    if travel_times:
+        avg_time = sum(travel_times) / len(travel_times)
+        print(f"Average Travel Time: {avg_time:.2f} seconds")
+        print(f"Vehicles Arrived: {len(travel_times)}")
+    else:
+        #hopefully this never happens lol (unless you end simulation super early)
+        print("No vehicles arrived.")

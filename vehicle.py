@@ -192,10 +192,8 @@ class Vehicle:
                 self.state = VehicleState.WaitingOnAck
     
         elif self.state == VehicleState.WaitingOnAck:
-            if self.ackCount == 0:
-                self.laneSwitch(traci)
-            else:
-                self.state = VehicleState.WaitingOnAck
+            #keep waiting
+            self.state = VehicleState.WaitingOnAck
 
         # Ego car responds to packets
         while not self.vehicle_requests[self.name].empty():

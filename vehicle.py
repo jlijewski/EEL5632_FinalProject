@@ -127,8 +127,7 @@ class Vehicle:
             vehLT = ("",-1) if not vehLTList else min(vehLTList, key=lambda x: x[1])
 
             """
-            Send a request packet for lane change from the closest vehicles. if RT vehicle agrees, set its max headway and decel
-            TODO: need additional acks for other neighbor cars using the appropriate safe dist method. 
+            Send a request packet for lane change from the closest vehicles. if RT vehicle agrees, set its max headway and decel 
             each safe dist smaller than the distance between the ego car and the neighbor
             """
             requestsSent = 0
@@ -336,8 +335,6 @@ class Vehicle:
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
         
-        # TODO? can we include cStyle of non ego vehicle through v2v, how does that change equation
-        
         # Find min safe distance between ego and rear
         if v_rd -v_k >=-5:
             t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_k)**2/(2*rt_decel) + c_style*t_rdsafe*v_rd
@@ -365,11 +362,7 @@ class Vehicle:
 
         # TODO: read through paper more to figure out what these calues should be
         t_ldsafe = 1.8 # rear vehicle time headway
-        a_ldcon = 2 # max deceleration of rear vehicle in target lane
-        # TODO!! IDK how to find this value, this is a place holder, need to examine paper
-        a_hmax = 2.5
-        a_ldmax = 2.5
-
+        
         t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
         t2 = c_style*v_h*t_ldsafe
         delta_d_mldh = min(t1,t2)
@@ -411,11 +404,3 @@ class Vehicle:
         if (left_follower[0] == "" and left_follower[0]=="") or left_follower[1] > rd_safe:
             changeLane = 1
         return changeLane
-    
-    # def getTimeHeadway(self,traci,followerID, lookahead=100.0):
-    #     #leader_info = traci.vehicle.getLeader(followerID, lookahead)
-    #     if leader_info is None:
-    #         return None  # no leader ahead
-    #     leaderID, gap = leader_info
-    #     speed = traci.vehicle.getSpeed(followerID)
-    #     return gap / speed if speed > 0 else float('inf')

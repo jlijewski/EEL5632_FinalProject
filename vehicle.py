@@ -16,13 +16,14 @@ class VehicleState(Enum):
 #     Three = "E1_3"
 #     Four = "E1_4"
 class Packet:
-    def __init__(self, sender, type, reportedSpeed, distance, accel=None, pos=None, lane=None):
+    def __init__(self, sender, type, reportedSpeed, distance, accel=None, decel = None, pos=None, lane=None):
         self.sender = sender
         # Type is R for request, A for Ack
         self.type = type
         self.speed = reportedSpeed
         self.distance = distance
         self.accel = accel
+        self.decel = decel
         self.pos = pos
         self.lane = lane
 
@@ -30,10 +31,11 @@ class Vehicle:
 
     vehicle_requests: dict[str, Queue] = {}
 
-    def __init__(self, name, speed, accel, pos, lane, lanePos, length):
+    def __init__(self, name, speed, accel, decel, pos, lane, lanePos, length):
         self.name = name
         self.speed = speed
         self.accel = accel
+        self.decel = decel
         self.pos = pos
         self.lane = lane
         self.lanePos = lanePos
@@ -54,6 +56,7 @@ class Vehicle:
     def update(self, traci):
         self.speed = traci.vehicle.getSpeed(self.name)
         self.accel = traci.vehicle.getAcceleration(self.name)
+        self.decel = traci.vehicle.getDecel(self.name)
         self.pos = traci.vehicle.getPosition(self.name)
         self.lane = traci.vehicle.getLaneIndex(self.name)
         self.lanePos = traci.vehicle.getLanePosition(self.name)
@@ -116,6 +119,7 @@ class Vehicle:
                     reportedSpeed=self.speed,
                     distance=vehRT[1],
                     accel=self.accel,
+                    decel = self.decel,
                     pos=self.pos,
                     lane=self.lane
                 )
@@ -130,6 +134,7 @@ class Vehicle:
                     reportedSpeed=self.speed,
                     distance=vehLT[1],
                     accel=self.accel,
+                    decel = self.decel,
                     pos=self.pos,
                     lane=self.lane
                 )
@@ -144,6 +149,7 @@ class Vehicle:
                     reportedSpeed=self.speed,
                     distance=vehRO[1],
                     accel=self.accel,
+                    decel = self.decel,
                     pos=self.pos,
                     lane=self.lane
                 )
@@ -158,6 +164,7 @@ class Vehicle:
                     reportedSpeed=self.speed,
                     distance=vehLO[1],
                     accel=self.accel,
+                    decel = self.decel,
                     pos=self.pos,
                     lane=self.lane
                 )
@@ -187,7 +194,7 @@ class Vehicle:
             
             if packet.type == "R":
                 # send back the needed info to check if the lane change is safe
-                safeDistCheck = self.findRTsafeDist(packet.speed, self.speed, 1)
+                safeDistCheck = self.findRTsafeDist(packet.speed, self.speed, packet.decel, self.decel, 1)
                 if packet.distance > safeDistCheck and packet.accel <= self.accel:
                     ackPacket = Packet(
                         sender=self.name,
@@ -195,6 +202,7 @@ class Vehicle:
                         reportedSpeed=self.speed,
                         distance=packet.distance,
                         accel=self.accel,
+                        decel = self.decel,
                         pos=self.pos,
                         lane=self.lane
                     )
@@ -231,7 +239,7 @@ class Vehicle:
                 if leaderSpeed < self.speed and (leaderAcc - self.accel) < 0:
                     # pass if left lane is empty 
                     # or pass if gap is big enough
-                    changeLane = self.checkLeftLanePass(traci)
+                    changeLane = 1
 
         # Change to right lane, cant already be in right msot lane
         if self.lane > 0:
@@ -247,7 +255,7 @@ class Vehicle:
                 SPEED_THRESHOLD = 0.5  # m/s
                 # compare goal speeds of ego and following vehicle (maxSpeed*speedFactor)
                 if rf_goal > ego_goal + SPEED_THRESHOLD:
-                    changeLane = self.checkRightLanePass(traci)
+                    changeLane = -1
         return changeLane
     
     def laneSwitchStart(self, target):
@@ -265,7 +273,7 @@ class Vehicle:
         self.targetLane = 0
     
 
-    def findRTsafeDist(self,v_rd, v_k, c_style):
+    def findRTsafeDist(self,v_rd, v_k, rt_decel,c_style):
         """
         Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
         Based on: 
@@ -288,7 +296,7 @@ class Vehicle:
         
         # Find min safe distance between ego and rear
         if v_rd -v_k >=-5:
-            t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_k)**2/(2*a_rdcon) + c_style*t_rdsafe*v_rd
+            t1 = c_style*(v_rd-v_k)*t_reaction +3*c_style*(v_rd - v_k)**2/(2*rt_decel) + c_style*t_rdsafe*v_rd
             t2 = c_style*t_rdsafe*v_rd
             delta_d_mrdh = max(t1, t2)
         else:
@@ -296,7 +304,7 @@ class Vehicle:
         return delta_d_mrdh
 
 
-    def findLTsafeDist(self, v_ld, v_h, c_style):
+    def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel,c_style):
         """
         Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
         From eq (16)
@@ -315,10 +323,10 @@ class Vehicle:
         t_ldsafe = 1.8 # rear vehicle time headway
         a_ldcon = 2 # max deceleration of rear vehicle in target lane
         # TODO!! IDK how to find this value, this is a place holder, need to examine paper
-        a_hmax = 2.5 
+        a_hmax = 2.5
         a_ldmax = 2.5
 
-        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(a_hmax) -c_style*v_ld**2/(2*a_ldmax)
+        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
         t2 = c_style*v_h*t_ldsafe
         delta_d_mldh = min(t1,t2)
         return delta_d_mldh

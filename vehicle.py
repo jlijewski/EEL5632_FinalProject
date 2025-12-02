@@ -15,7 +15,7 @@ class VehicleState(Enum):
 #     Two = "E1_2"
 #     Three = "E1_3"
 #     Four = "E1_4"
-class Packet:
+class ReturnPacket:
     def __init__(self, sender, type, reportedSpeed, distance, accel=None, decel = None, pos=None, lane=None):
         self.sender = sender
         # Type is R for request, A for Ack
@@ -26,6 +26,17 @@ class Packet:
         self.decel = decel
         self.pos = pos
         self.lane = lane
+class RequestPacket:
+    def __init__(self, sender, type, neighbor):
+        self.sender = sender
+        self.type = type
+        self.neighbor = neighbor
+class ConfirmPacket:
+    def __init__(self, sender, type, neighbor, isGettingOver):
+        self.sender = sender
+        self.type = type
+        self.neighbor = neighbor
+        self.isGettingOver = isGettingOver
 
 class Vehicle:
 

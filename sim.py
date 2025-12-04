@@ -37,6 +37,9 @@ total_speed = 0
 LYING_ENABLED = False  
 LYING_CHANCE = 0.3   
 
+# track a single vehicle throughout simulation. if None, a random car will be chosen
+tracked_vehicle_id = None
+
 # Metrics declaration
 departure_times = {}
 travel_times = []
@@ -92,6 +95,20 @@ try:
                 del departure_times[oldVeh]
             if oldVeh in vehicles:
                 del vehicles[oldVeh]
+
+# choose a new vehicle to track if none or if tracked one left
+        if tracked_vehicle_id is None or tracked_vehicle_id not in traci.vehicle.getIDList():
+            ids = traci.vehicle.getIDList()
+            if ids:
+                tracked_vehicle_id = random.choice(ids)
+                vehicles[tracked_vehicle_id].isTracked = True
+                print(f"\n++++++ Now tracking vehicle: {tracked_vehicle_id} ++++++++\n")
+            else:
+                tracked_vehicle_id = None
+        '''Track a specific vehicle for debugging'''
+        # if tracked_vehicle_id and tracked_vehicle_id in traci.vehicle.getIDList():
+        #     tracked_vehicle_id
+
 except traci.exceptions.TraCIException as e:
     print("GUI Closed")
 finally:

@@ -39,6 +39,8 @@ class RequestPacket:
         self.decel = decel
         self.pos = pos
         self.lane = lane
+    def __str__(self):
+        return f"++++ Request Packet Sent to {self.neighbor}, reported at speed = {self.speed}, Gap = self.reportedGap ++++\n"
 
 '''
 Return Packet   -   sent by car that is neighbor to car changing lanes
@@ -54,6 +56,8 @@ class ReturnPacket:
         self.state = state
         self.reportedGap = reportedGap
         self.safeDistanceCheck = safeDistanceCheck
+    def __str__(self):
+        return f"==== Ack Packet sent from {self.neighbor}, reported Gap = {self.reportedGap} and the check is {self.safeDistanceCheck}\n"
 
 class Vehicle:
 
@@ -77,18 +81,28 @@ class Vehicle:
         self.requestsSent = 0
         self.lyingFactor = lyingFactor # 0 for honest, 1 for lying
         self.vehicle_lying_factors[self.name] = self.lyingFactor
+        self.isTracked = False
         # TODO : consider adding cstyle as attribute of veh
         # print(f"Created: {name}")
 
     def __del__(self):
-        if self.name in self.active_lane_changes:
-            del self.active_lane_changes[self.name]
         if self.name in self.vehicle_lying_factors:
             del self.vehicle_lying_factors[self.name]
-        print(f"Deleted: {self}")
+        if self.isTracked: print(f"Deleted: {self}")
 
     def disableLaneSwitch(self, traci):
         traci.vehicle.setLaneChangeMode(self.name, 0)
+
+    def tracker(self, traci):
+        traci.vehicle.highlight(self.name, color=(215, 35, 168))
+        print(f"name = {self.name}, speed = {self.speed:.2f}, accel = {self.accel:.2f}, decel = {self.decel:.2f}, lane = {self.lane}\nState = {self.state}, targetLane = {self.targetLane}\n")
+        print(f'---- Vehicle has {self.requestsSent} requests and {self.ackCount} acks in queue\n')
+        if self.targetLane!=0:
+            neighborList = self.getNeighbors(traci)
+            for n in neighborList:
+                if n[0]:
+                    traci.vehicle.highlight(n[0], color=(39, 180, 190)) #magenta
+                    print(f"--- Neighbor: {n[0]} at dist {n[1]} ---\n")
 
     def update(self, traci):
         self.speed = traci.vehicle.getSpeed(self.name)
@@ -98,7 +112,7 @@ class Vehicle:
         self.lane = traci.vehicle.getLaneIndex(self.name)
         self.lanePos = traci.vehicle.getLanePosition(self.name)
         self.length = traci.vehicle.getLength(self.name)
-
+        if self.isTracked == True: self.tracker(traci)
         """ 
         avg paramters for drivers and vehicles
         TODO:
@@ -121,7 +135,7 @@ class Vehicle:
         if self.state == VehicleState.ChangingLane:
             # Update state when lane change is finished
             if current_lane == self.targetLane:
-                print("FINISHED LANE CHANGE")
+                if self.isTracked: print("FINISHED LANE CHANGE")
                 self.state = VehicleState.Idle
                 self.targetLane = 0
         elif self.state == VehicleState.SendingRequest:
@@ -168,6 +182,7 @@ class Vehicle:
 
                     pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, self.pos, self.lane)
                     self.vehicle_requests[target_id].put(pkt)
+                    if self.isTracked: print(pkt)
                     self.requestsSent += 1
 
             # Packet request to target rear car
@@ -247,6 +262,7 @@ class Vehicle:
                     safeDistanceCheck = safeDistCheck
                 )
                 self.vehicle_requests[packet.sender].put(infoPacket)
+                if self.isTracked: print(infoPacket)
             
             elif packet.type == "A":
                 if packet.safeDistanceCheck:
@@ -300,14 +316,14 @@ class Vehicle:
     
     def laneSwitchStart(self, target):
         self.state = VehicleState.SendingRequest
-        print("REQUEST LANE CHANGE")
+        if self.isTracked: print("REQUEST LANE CHANGE")
         self.targetLane = target+self.lane
 
     def laneSwitch(self, traci):
         self.state = VehicleState.Idle
         self.ackCount = 0
         self.state = VehicleState.ChangingLane  # Set to changing state
-        print("STARTED LANE CHANGE ")
+        if self.isTracked: print("STARTED LANE CHANGE ")
         traci.vehicle.changeLane(
             vehID=self.name, laneIndex=self.targetLane, duration=2.0
         )
@@ -378,3 +394,21 @@ class Vehicle:
 
         delta_d_xoh = c_style*v_h*t_xosafe
         return delta_d_xoh
+    def getNeighbors(self,traci):
+        vehRO = traci.vehicle.getFollower(self.name) or ["",-1]
+        # get ego lane leader
+        vehLO = traci.vehicle.getLeader(self.name) or ["",-1]
+        # determine if switching to left or right and get appropriate leader and follower (there is an easier way to do thise with bits)
+        if self.targetLane > 0:
+            # target is left
+            vehRTList = traci.vehicle.getLeftFollowers(self.name) or []
+            vehLTList = traci.vehicle.getLeftLeaders(self.name) or []
+        elif self.targetLane < 0:
+            # target is right lane
+            vehRTList = traci.vehicle.getRightFollowers(self.name) or []
+            vehLTList = traci.vehicle.getRightLeaders(self.name) or []
+        # get closest follower/leader in target lane
+        vehRT = ("",-1) if not vehRTList else min(vehRTList, key=lambda x: x[1])
+        vehLT = ("",-1) if not vehLTList else min(vehLTList, key=lambda x: x[1])
+        neghborList = [vehRT, vehLT, vehRO, vehLO]
+        return neghborList

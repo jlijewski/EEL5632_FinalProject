@@ -275,6 +275,10 @@ class Vehicle:
                     self.ackCount += 1
                 else: 
                     # if any gap is too small, then cancel requests
+                    if packet.neighbor == 4:
+                        traci.vehicle.highlight(self.name, color=(255, 0, 0))
+                        print(f"{self.name} aborting: far lane conflict.")
+
                     self.ackCount = 0
                     self.state = VehicleState.Idle
             

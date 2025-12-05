@@ -40,7 +40,7 @@ class RequestPacket:
         self.pos = pos
         self.lane = lane
     def __str__(self):
-        return f"++++ Request Packet Sent to {self.neighbor}, reported at speed = {self.speed}, Gap = self.reportedGap ++++\n"
+        return f"++++ Request Packet Sent to {self.neighbor}, reported at speed = {self.speed:.2f}, Gap = self.reportedGap ++++\n"
 
 '''
 Return Packet   -   sent by car that is neighbor to car changing lanes
@@ -49,15 +49,16 @@ Return Packet   -   sent by car that is neighbor to car changing lanes
                 -   Payload gives minimum safe gap distance
 '''
 class ReturnPacket:
-    def __init__(self, sender, neighbor, state, reportedGap, safeDistanceCheck):
+    def __init__(self, sender, neighbor, state, reportedGap, safeDistance, safeDistanceCheck):
         self.sender = sender
         self.type = "A"
         self.neighbor = neighbor
         self.state = state
         self.reportedGap = reportedGap
+        self.safeDistance = safeDistance
         self.safeDistanceCheck = safeDistanceCheck
     def __str__(self):
-        return f"==== Ack Packet sent from {self.neighbor}, reported Gap = {self.reportedGap} and the check is {self.safeDistanceCheck}\n"
+        return f"==== Ack Packet sent from {self.neighbor}, reported Gap = {self.reportedGap:.2f} compare with safe Dis {self.safeDistance:.2f}  and the check is {self.safeDistanceCheck}\n"
 
 class Vehicle:
 
@@ -95,7 +96,7 @@ class Vehicle:
 
     def tracker(self, traci):
         traci.vehicle.highlight(self.name, color=(215, 35, 168))
-        print(f"name = {self.name}, speed = {self.speed:.2f}, accel = {self.accel:.2f}, decel = {self.decel:.2f}, lane = {self.lane}\nState = {self.state}, targetLane = {self.targetLane}\n")
+        print(f"======\nname = {self.name}, speed = {self.speed:.2f}, accel = {self.accel:.2f}, decel = {self.decel:.2f}, lane = {self.lane}\nState = {self.state}, targetLane = {self.targetLane}")
         print(f'---- Vehicle has {self.requestsSent} requests and {self.ackCount} acks in queue\n')
         if self.targetLane!=0:
             neighborList = self.getNeighbors(traci)
@@ -146,7 +147,7 @@ class Vehicle:
                 return
             # Goal: send request to 4 neighbor cars, follower/leader in target lane and follower/leader in original lane
             # iterate over all cars in target lane and send nearest rear and nearest leader a request
-            traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
+            #traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
 
             '''Get neighbor cars'''
             # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
@@ -241,16 +242,17 @@ class Vehicle:
                     safeDistance = self.findRTsafeDist(self.speed, packet.speed, self.decel, 1)
                     self.delta_d_rt = safeDistance
                 elif packet.neighbor == 1 and self.state != VehicleState.ChangingLane:
-                    safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, 1)
+                    #safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, 1)
+                    safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, 1)
                     # TODO : could prevent emergency breaking or cancel lane change in case of emergency breaking
                 elif packet.neighbor == 2: 
                     # packet reponse is from original lane follower
                     headway = packet.reportedGap / packet.speed if packet.speed > 0 else float('inf')
-                    safeDistance = self.findXOsafeDist(packet.speed, headway,1)
+                    safeDistance = self.findXOsafeDist(self.speed, packet.speed, self.decel, 1)
                 elif packet.neighbor == 3:
                     # packet reponse is from original lane leader
                     headway = packet.reportedGap / packet.speed if packet.speed > 0 else float('inf')
-                    safeDistance = self.findXOsafeDist(packet.speed, headway,1)
+                    safeDistance = self.findXOsafeDist(self.speed, packet.speed, self.decel, 1)
                 if packet.reportedGap > safeDistance:
                     safeDistCheck = True
 
@@ -259,10 +261,12 @@ class Vehicle:
                     neighbor = packet.neighbor,
                     state = self.state,
                     reportedGap = packet.reportedGap,
+                    safeDistance = safeDistance,
                     safeDistanceCheck = safeDistCheck
                 )
                 self.vehicle_requests[packet.sender].put(infoPacket)
-                if self.isTracked: print(infoPacket)
+                if self.isTracked: 
+                    print(infoPacket)
             
             elif packet.type == "A":
                 if packet.safeDistanceCheck:
@@ -358,42 +362,54 @@ class Vehicle:
             delta_d_mrdh = c_style*t_rdsafe*v_rd
         return delta_d_mrdh
 
+    # d=vt
+    def findLTsafeDist(self,v_rd, v_k, rt_decel,c_style):
+        safeTime = 2
+        # its safe to get over if velocity of ego car is faster then rear car
+        relative_v = abs(v_k-v_rd)
+        safeDist = relative_v*safeTime
+        return safeTime
+    def findXOsafeDist(self,v_rd, v_k, rt_decel,c_style):
+        safeTime = 2
+        # its safe to get over if velocity of ego car is faster then rear car
+        relative_v = abs(v_k-v_rd)
+        safeDist = relative_v*safeTime
+        return safeDist
+    # def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel,c_style):
+    #     """
+    #     Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
+    #     From eq (16)
+    #     v_ld rear vechicle in target lane speed before lane change
+    #     v_h ego vechicles speed befor lane change
+    #     cStyle ego driving style
+    #     """
+    #     # avg paramters for drivers and vehicles
+    #     # some of these could come from v2v
+    #     # TODO these may be able to be pulled from car info
+    #     t_driver = 1.35 # driver's reaction time
+    #     t_brake = 0.15 # acting time of braking system
+    #     t_reaction = t_driver + t_brake
 
-    def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel,c_style):
-        """
-        Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
-        From eq (16)
-        v_ld rear vechicle in target lane speed before lane change
-        v_h ego vechicles speed befor lane change
-        cStyle ego driving style
-        """
-        # avg paramters for drivers and vehicles
-        # some of these could come from v2v
-        # TODO these may be able to be pulled from car info
-        t_driver = 1.35 # driver's reaction time
-        t_brake = 0.15 # acting time of braking system
-        t_reaction = t_driver + t_brake
-
-        # TODO: read through paper more to figure out what these calues should be
-        t_ldsafe = 1.8 # rear vehicle time headway
+    #     # TODO: read through paper more to figure out what these calues should be
+    #     t_ldsafe = 1.8 # rear vehicle time headway
         
-        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
-        t2 = c_style*v_h*t_ldsafe
-        delta_d_mldh = min(t1,t2)
-        return delta_d_mldh
+    #     t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
+    #     t2 = c_style*v_h*t_ldsafe
+    #     delta_d_mldh = min(t1,t2)
+    #     return delta_d_mldh
     
-    def findXOsafeDist(self, v_h, t_xosafe, c_style):
-        """
-        Find the minimum safe distance between ego-vehicle and vehicle in original lane
-        From eq (16)
-        v_h ego vechicles speed befor lane change
-        t_xosafe safe time headway between ego and front/rear vehicle in original lane
-            this may or may not actually be a passed arg
-        cStyle ego driving style
-        """
+    # def findXOsafeDist(self, v_h, t_xosafe, c_style):
+    #     """
+    #     Find the minimum safe distance between ego-vehicle and vehicle in original lane
+    #     From eq (16)
+    #     v_h ego vechicles speed befor lane change
+    #     t_xosafe safe time headway between ego and front/rear vehicle in original lane
+    #         this may or may not actually be a passed arg
+    #     cStyle ego driving style
+    #     """
 
-        delta_d_xoh = c_style*v_h*t_xosafe
-        return delta_d_xoh
+    #     delta_d_xoh = c_style*v_h*t_xosafe
+    #     return delta_d_xoh
     def getNeighbors(self,traci):
         vehRO = traci.vehicle.getFollower(self.name) or ["",-1]
         # get ego lane leader

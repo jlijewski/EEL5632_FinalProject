@@ -102,7 +102,7 @@ try:
             if ids:
                 tracked_vehicle_id = random.choice(ids)
                 vehicles[tracked_vehicle_id].isTracked = True
-                print(f"\n++++++ Now tracking vehicle: {tracked_vehicle_id} ++++++++\n")
+                print(f"\n+++++++++ NOW TRACKING VEHICLE: {tracked_vehicle_id} ++++++++++\n")
             else:
                 tracked_vehicle_id = None
         '''Track a specific vehicle for debugging'''

@@ -59,7 +59,7 @@ class ReturnPacket:
         self.safeDistance = safeDistance
         self.safeDistanceCheck = safeDistanceCheck
     def __str__(self):
-        return f"==== Ack Packet sent from {self.neighbor}, reported Gap = {self.reportedGap:.2f} compare with safe Dis {self.safeDistance:.2f}  and the check is {self.safeDistanceCheck}\n"
+        return f"==== Ack Packet sent from {self.sender} neighbor = {self.neighbor}, reported Gap = {self.reportedGap:.2f} compare with safe Dis {self.safeDistance:.2f}  and the check is {self.safeDistanceCheck}\n"
 
 class Vehicle:
 
@@ -98,7 +98,7 @@ class Vehicle:
     def tracker(self, traci):
         traci.vehicle.highlight(self.name, color=(215, 35, 168))
         print(f"======\nname = {self.name}, speed = {self.speed:.2f}, accel = {self.accel:.2f}, decel = {self.decel:.2f}, lane = {self.lane}\nState = {self.state}, targetLane = {self.targetLane}")
-        print(f'---- Vehicle has {self.requestsSent} requests and {self.ackCount} acks in queue\n')
+        print(f'---- Vehicle has sent {self.requestsSent} requests and accepted {self.ackCount} acks\n')
         if self.targetLane:
             neighborList = self.getNeighbors(traci)
             for n in neighborList:
@@ -203,6 +203,7 @@ class Vehicle:
 
             self.state = VehicleState.WaitingOnAck
 
+        elif self.state == VehicleState.WaitingOnAck:
             ''' 
             Ego car which requested to change lanes processes Acks 
             Check to see if lane change should occur and do lane change
@@ -219,15 +220,10 @@ class Vehicle:
                     traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= self.delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                 self.laneSwitch(traci)
             else:
-                # TODO check if this is redundant 
                 # not all acks have been recieved
                 if self.isTracked: print(f"WAITING ON ACK TARGET LANE {self.targetLane} ACK COUNT {self.ackCount} VS SENT {self.requestsSent}")
                 self.state = VehicleState.WaitingOnAck
-    
-        elif self.state == VehicleState.WaitingOnAck:
-            #keep waiting
-            # TODO is this redundant?
-            self.state = VehicleState.WaitingOnAck
+            
         
         ''' 
         Process recieved packets in ego car queue. ego car is the reciever
@@ -280,23 +276,24 @@ class Vehicle:
                 # send response packet out
                 self.vehicle_requests[packet.sender].put(infoPacket)
 
-                if self.isTracked: print(infoPacket)
+                #print packet sent
+                if self.isTracked: print(f"SENT ACK: {infoPacket}")
             
             elif packet.type == "A":
-                if self.isTracked: print(f"RECIEVED ACK: {packet}")
                 if self.state != VehicleState.WaitingOnAck:
                     # only accepts acks if wanting to change lanes, ignore during any other state
                     if self.isTracked: print(f"ACK IGNORED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
                     self.ackCount = 0
                 elif packet.safeDistanceCheck:
                     self.ackCount += 1
-                    if self.isTracked: print(f"ACK CONFIRMED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
+                    if self.isTracked: print(f"!! ACK CONFIRMED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent} !!")
                 else: 
                     if self.isTracked: print(f"ACK DENIED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
                     # if any gap is too small, then cancel requests
+                    self.state = VehicleState.Idle
                     self.requestsSent = 0
                     self.ackCount = 0
-                    self.state = VehicleState.Idle
+                    self.targetLane = None
     
     def laneChagneTest (self, traci):
         """

@@ -320,8 +320,8 @@ class Vehicle:
     
     def laneSwitchStart(self, target):
         self.state = VehicleState.SendingRequest
-        if self.isTracked: print("REQUEST LANE CHANGE")
         self.targetLane = target+self.lane
+        if self.isTracked: print(f"REQUEST LANE CHANGE to {self.targetLane}")
 
     def laneSwitch(self, traci):
         self.state = VehicleState.Idle

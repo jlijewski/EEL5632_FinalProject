@@ -294,7 +294,6 @@ class Vehicle:
                     self.state = VehicleState.Idle
                     self.requestsSent = 0
                     self.ackCount = 0
-                    self.targetLane = None
     
     def laneChagneTest (self, traci):
         """
@@ -345,12 +344,12 @@ class Vehicle:
 
     def laneSwitch(self, traci):
         self.ackCount = 0
+        self.requestsSent = 0
         self.state = VehicleState.ChangingLane  # Set to changing state
         if self.isTracked: print("STARTED LANE CHANGE ")
         traci.vehicle.changeLane(
             vehID=self.name, laneIndex=self.targetLane, duration=2.0
         )
-        # self.targetLane = None
     
 
     def findRTsafeDist(self,v_rd, v_k, rt_decel,c_style):
@@ -379,7 +378,7 @@ class Vehicle:
             delta_d_mrdh = max(t1, t2)
         else:
             delta_d_mrdh = c_style*t_rdsafe*v_rd
-        if self.isTracked: print(f'     Safe RT Distance {delta_d_mrdh}')
+        if self.isTracked: print(f'    Safe RT Distance {delta_d_mrdh}')
         return delta_d_mrdh
 
     # d=vt
@@ -389,7 +388,7 @@ class Vehicle:
         relative_v = abs(v_k-v_rd)
         safeDist = relative_v*safeTime
 
-        if self.isTracked: print(f'     Safe LT Distance {safeDist}')
+        if self.isTracked: print(f'    Safe LT Distance {safeDist}')
         return safeDist
     
     def findXOsafeDist(self, v_h, t_xosafe, c_style):
@@ -402,7 +401,7 @@ class Vehicle:
         #t_xosafe safe time headway between ego and front/rear vehicle in original lane. 
         #t_xosafe = 2 # 2 seconds for good weather
         delta_d_xoh = c_style*v_h*t_xosafe
-        if self.isTracked: print(f'     XO Headway = {t_xosafe} XO Distance {delta_d_xoh}')
+        if self.isTracked: print(f'   XO Headway = {t_xosafe} XO Distance {delta_d_xoh}')
         return delta_d_xoh
     # def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel,c_style):
     #     """

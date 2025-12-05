@@ -38,7 +38,7 @@ LYING_ENABLED = False
 LYING_CHANCE = 0.3   
 
 # track a single vehicle throughout simulation. if None, a random car will be chosen
-tracked_vehicle_id = 'f_east.7'
+tracked_vehicle_id = 'f_east.4'
 
 # Metrics declaration
 departure_times = {}
@@ -83,11 +83,6 @@ try:
                 print(f"\n+++++++++ NOW TRACKING VEHICLE: {tracked_vehicle_id} ++++++++++\n")
 
         for currVeh in traci.vehicle.getIDList():
-            # see if ego vehcile is in a case to switch lanes
-            if vehicles[currVeh].laneChagneTest(traci) !=0:
-                # request lane change, changes vehicle state
-                vehicles[currVeh].laneSwitchStart(vehicles[currVeh].laneChagneTest(traci))
-        
             # update does actual lane change
             vehicles[currVeh].update(traci)
 

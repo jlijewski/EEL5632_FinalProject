@@ -99,7 +99,7 @@ class Vehicle:
         traci.vehicle.highlight(self.name, color=(215, 35, 168))
         print(f"======\nname = {self.name}, speed = {self.speed:.2f}, accel = {self.accel:.2f}, decel = {self.decel:.2f}, lane = {self.lane}\nState = {self.state}, targetLane = {self.targetLane}")
         print(f'---- Vehicle has sent {self.requestsSent} requests and accepted {self.ackCount} acks\n')
-        if self.targetLane:
+        if self.targetLane and self.targetLane != self.lane:
             neighborList = self.getNeighbors(traci)
             for n in neighborList:
                 if n[0]:
@@ -216,8 +216,9 @@ class Vehicle:
                 # all requests have been acknowledge, change lane
                 if self.isTracked: print(f"ALL ACKS RECIEVED. CAN CHANGE LANES TO {self.targetLane} ACK COUNT {self.ackCount} VS SENT {self.requestsSent}")
                 # set gap for rear car in target lane
-                if vehRT[0]:
-                    traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= self.delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
+                # TODO: setting headway would need another ack
+                # if vehRT[0]:
+                #     traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= self.delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                 self.laneSwitch(traci)
             else:
                 # not all acks have been recieved
@@ -343,7 +344,6 @@ class Vehicle:
         if self.isTracked: print(f"REQUEST LANE CHANGE to {self.targetLane}")
 
     def laneSwitch(self, traci):
-        self.state = VehicleState.Idle
         self.ackCount = 0
         self.state = VehicleState.ChangingLane  # Set to changing state
         if self.isTracked: print("STARTED LANE CHANGE ")

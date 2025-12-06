@@ -41,7 +41,7 @@ class RequestPacket:
         self.pos = pos
         self.lane = lane
     def __str__(self):
-        return f">>>>>>>>> Request Packet Sent to {self.neighbor}, reported at speed = {self.speed:.2f}, Gap = {self.reportedGap:.2f}, Headway = {self.headway:.2f} <<<<<<<<<<\n"
+        return f">>>>>>> Request Packet Sent to {self.neighbor}, reported at speed = {self.speed:.2f}, Gap = {self.reportedGap:.2f}, Headway = {self.headway:.2f} <<<<<<<<\n"
 
 '''
 Return Packet   -   sent by car that is neighbor to car changing lanes
@@ -59,7 +59,7 @@ class ReturnPacket:
         self.safeDistance = safeDistance
         self.safeDistanceCheck = safeDistanceCheck
     def __str__(self):
-        return f"==== Ack Packet sent from {self.sender} neighbor = {self.neighbor}, reported Gap = {self.reportedGap:.2f} compare with safe Dis {self.safeDistance:.2f}  and the check is {self.safeDistanceCheck}\n"
+        return f"<<<<<<< Ack Packet sent from {self.sender} neighbor = {self.neighbor}, reported Gap = {self.reportedGap:.2f} compare with safe Dis {self.safeDistance:.2f}  and the check is {self.safeDistanceCheck}>>>>>>>>>\n"
 
 class Vehicle:
 
@@ -99,11 +99,12 @@ class Vehicle:
         traci.vehicle.highlight(self.name, color=(215, 35, 168))
         print(f"======\nname = {self.name}, speed = {self.speed:.2f}, accel = {self.accel:.2f}, decel = {self.decel:.2f}, lane = {self.lane}\nState = {self.state}, targetLane = {self.targetLane}")
         print(f'---- Vehicle has sent {self.requestsSent} requests and accepted {self.ackCount} acks\n')
+        # print and highlight neighbor cars
         if self.targetLane and self.targetLane != self.lane:
             neighborList = self.getNeighbors(traci)
             for n in neighborList:
                 if n[0]:
-                    traci.vehicle.highlight(n[0], color=(39, 180, 190)) #magenta
+                    traci.vehicle.highlight(n[0], color=(39, 180, 190))
                     print(f"--- Neighbor: {n[0]} at dist {n[1]} ---\n")
 
     def update(self, traci):
@@ -153,9 +154,6 @@ class Vehicle:
                 self.state = VehicleState.Idle
                 return
             # Goal: send request to 4 neighbor cars, follower/leader in target lane and follower/leader in original lane
-            # iterate over all cars in target lane and send nearest rear and nearest leader a request
-            #traci.vehicle.highlight(self.name, color=(104, 171, 31)) #green
-
             '''Get neighbor cars'''
             # vehXX gives a tuple (veh_ID, dist) where distance is the distance between them and ego car
             #get ego lane follower
@@ -198,11 +196,10 @@ class Vehicle:
             send_pkt(vehLT[0], vehLT[1], 1)
             send_pkt(vehRO[0], vehRO[1], 2)
             send_pkt(vehLO[0], vehLO[1], 3)
- 
             self.state = VehicleState.WaitingOnAck
 
         elif self.state == VehicleState.WaitingOnAck:
-            ''' 
+            ''' Wait on Acks
             Ego car which requested to change lanes processes Acks 
             Check to see if lane change should occur and do lane change
             '''
@@ -213,10 +210,6 @@ class Vehicle:
             elif self.ackCount == self.requestsSent:
                 # all requests have been acknowledge, change lane
                 if self.isTracked: print(f"ALL ACKS RECIEVED. CAN CHANGE LANES TO {self.targetLane} ACK COUNT {self.ackCount:.2f} VS SENT {self.requestsSent:.2f}")
-                # set gap for rear car in target lane
-                # TODO: setting headway would need another ack
-                # if vehRT[0]:
-                #     traci.vehicle.openGap(vehID = vehRT[0],newTimeHeadway =  t_rdsafe, newSpaceHeadway= self.delta_d_rt, duration = 3.0, changeRate = a_rdcon, referenceVehID=self.name)
                 self.laneSwitch(traci)
             else:
                 # not all acks have been recieved
@@ -224,8 +217,8 @@ class Vehicle:
                 self.state = VehicleState.WaitingOnAck
             
         
-        ''' 
-        Process recieved packets in ego car queue. ego car is the reciever
+        ''' Process recieved packets in ego car queue.
+        ego car is the reciever
         Requests    -   ego car is the neighbor to the sender car who wants to change lanes
                     -   payload is data of requesting car 
                     -   minimum safe gap between sender and reciever is calculated by reciever using the payload
@@ -252,11 +245,9 @@ class Vehicle:
                     self.delta_d_rt = safeDistance
                 elif packet.neighbor == 1 and self.state != VehicleState.ChangingLane:
                     safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, packet.headway, 1)
-                    #safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, 1)
                     # TODO : could prevent emergency breaking or cancel lane change in case of emergency breaking
                 elif packet.neighbor == 2: 
                     # packet reponse is from original lane follower
-                    #headway = packet.reportedGap / packet.speed if packet.speed > 0 else float('inf')
                     safeDistance = self.findXOsafeDist(packet.speed, packet.headway, 1)
                 elif packet.neighbor == 3:
                     # packet reponse is from original lane leader
@@ -348,7 +339,6 @@ class Vehicle:
         traci.vehicle.changeLane(
             vehID=self.name, laneIndex=self.targetLane, duration=2.0
         )
-    
 
     def findRTsafeDist(self,v_rd, v_k, rt_decel, t_rdsafe, c_style):
         """
@@ -403,11 +393,10 @@ class Vehicle:
         """
         Find the minimum safe distance between ego-vehicle and vehicle in original lane
         From eq (16)
-        v_h ego vechicles speed befor lane change
-        cStyle ego driving style
+        v_h ego     vechicles speed befor lane change
+        t_xosafe    safe time headway between ego and front/rear vehicle in original lane. 
+        cStyle      ego driving style
         """
-        #t_xosafe safe time headway between ego and front/rear vehicle in original lane. 
-        #t_xosafe = 2 # 2 seconds for good weather
         delta_d_xoh = c_style*v_h*t_xosafe
         #if self.isTracked: print(f'   XO Headway = {t_xosafe} XO Distance {delta_d_xoh}')
         return delta_d_xoh

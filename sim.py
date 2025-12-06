@@ -38,7 +38,7 @@ LYING_ENABLED = False
 LYING_CHANCE = 0.3   
 
 # track a single vehicle throughout simulation. if None, a random car will be chosen
-tracked_vehicle_id = 'f_east.4'
+tracked_vehicle_id = None
 
 # Metrics declaration
 departure_times = {}

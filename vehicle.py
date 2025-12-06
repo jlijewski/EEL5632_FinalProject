@@ -115,8 +115,7 @@ class Vehicle:
         self.lanePos = traci.vehicle.getLanePosition(self.name)
         self.length = traci.vehicle.getLength(self.name)
         if self.isTracked == True: self.tracker(traci)
-        """ 
-        avg paramters for drivers and vehicles
+        """ avg paramters for drivers and vehicles
         TODO:
             some of these could be taken from v2v instead
             these are used to set the gap and to calculate safe distance
@@ -177,8 +176,7 @@ class Vehicle:
             vehRT = ("",-1) if not vehRTList else min(vehRTList, key=lambda x: x[1])
             vehLT = ("",-1) if not vehLTList else min(vehLTList, key=lambda x: x[1])
 
-            """
-            Send a request packet for lane change to the neighbor vehicles. 
+            """ Send a request packet for lane change to the neighbor vehicles. 
             Request packet wil be processed by neighbor vehicle and contains data to determine if gap is safe
             if RT vehicle agrees, set its max headway and decel 
             """
@@ -192,7 +190,7 @@ class Vehicle:
 
                     pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, traci.vehicle.getTau(self.name), self.pos, self.lane)
                     self.vehicle_requests[target_id].put(pkt)
-                    if self.isTracked: print(pkt)
+                    if self.isTracked: print(f"SENT TO {target_id} {pkt}")
                     self.requestsSent += 1
 
             # Packet request to target rear car
@@ -200,7 +198,7 @@ class Vehicle:
             send_pkt(vehLT[0], vehLT[1], 1)
             send_pkt(vehRO[0], vehRO[1], 2)
             send_pkt(vehLO[0], vehLO[1], 3)
-
+ 
             self.state = VehicleState.WaitingOnAck
 
         elif self.state == VehicleState.WaitingOnAck:
@@ -214,7 +212,7 @@ class Vehicle:
                 self.laneSwitch(traci)
             elif self.ackCount == self.requestsSent:
                 # all requests have been acknowledge, change lane
-                if self.isTracked: print(f"ALL ACKS RECIEVED. CAN CHANGE LANES TO {self.targetLane} ACK COUNT {self.ackCount} VS SENT {self.requestsSent}")
+                if self.isTracked: print(f"ALL ACKS RECIEVED. CAN CHANGE LANES TO {self.targetLane} ACK COUNT {self.ackCount:.2f} VS SENT {self.requestsSent:.2f}")
                 # set gap for rear car in target lane
                 # TODO: setting headway would need another ack
                 # if vehRT[0]:
@@ -250,11 +248,11 @@ class Vehicle:
                 # Determine which neighbor sent the request to determine which min safe gap calculation to use
                 if packet.neighbor == 0 and self.state != VehicleState.ChangingLane:
                     # Response from RT neighbor
-                    safeDistance = self.findRTsafeDist(self.speed, packet.speed, self.decel, 1)
+                    safeDistance = self.findRTsafeDist(self.speed, packet.speed, self.decel, packet.headway, 1)
                     self.delta_d_rt = safeDistance
                 elif packet.neighbor == 1 and self.state != VehicleState.ChangingLane:
-                    #safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, 1)
-                    safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, 1)
+                    safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, packet.headway, 1)
+                    #safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, 1)
                     # TODO : could prevent emergency breaking or cancel lane change in case of emergency breaking
                 elif packet.neighbor == 2: 
                     # packet reponse is from original lane follower
@@ -283,13 +281,13 @@ class Vehicle:
             elif packet.type == "A":
                 if self.state != VehicleState.WaitingOnAck:
                     # only accepts acks if wanting to change lanes, ignore during any other state
-                    if self.isTracked: print(f"ACK IGNORED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
+                    if self.isTracked: print(f"ACK IGNORED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
                     self.ackCount = 0
                 elif packet.safeDistanceCheck:
                     self.ackCount += 1
-                    if self.isTracked: print(f"!! ACK CONFIRMED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent} !!")
+                    if self.isTracked: print(f"!! ACK CONFIRMED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent} safe gap {packet.safeDistance} vs repoted gap {packet.reportedGap}!!")
                 else: 
-                    if self.isTracked: print(f"ACK DENIED FROM {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
+                    if self.isTracked: print(f"ACK DENIED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
                     # if any gap is too small, then cancel requests
                     self.state = VehicleState.Idle
                     self.requestsSent = 0
@@ -352,7 +350,7 @@ class Vehicle:
         )
     
 
-    def findRTsafeDist(self,v_rd, v_k, rt_decel,c_style):
+    def findRTsafeDist(self,v_rd, v_k, rt_decel, t_rdsafe, c_style):
         """
         Find the minimum safe distance between ego-vehicle and rear vehicle in target lane
         Based on: 
@@ -360,14 +358,14 @@ class Vehicle:
         "A lane change warning system based on V2V communication" 
         From eq (16)
         rear target lane is most impactful vehicle
-        v_rd rear vechicle in target lane speed before lane change
-        v_k ego vechicles speed befor lane change
-        cStyle ego driving style
+        v_rd rear   vechicle in target lane speed before lane change
+        v_k ego     vechicles speed befor lane change
+        t_rdsafe    rear vehicle time headway
+        cStyle      ego driving style
         """
-        # TODO: see comment in update function on these, this double definition is silly
+        
         t_driver = 1.35 # driver's reaction time
         t_brake = 0.15 # acting time of braking system
-        t_rdsafe = 1.8 # rear vehicle time headway
         a_rdcon = 2 # max deceleration of rear vehicle in target lane
         t_reaction = t_driver + t_brake
         
@@ -378,18 +376,28 @@ class Vehicle:
             delta_d_mrdh = max(t1, t2)
         else:
             delta_d_mrdh = c_style*t_rdsafe*v_rd
-        if self.isTracked: print(f'    Safe RT Distance {delta_d_mrdh}')
+        #if self.isTracked: print(f'    Safe RT Distance {delta_d_mrdh}')
         return delta_d_mrdh
-
-    # d=vt
-    def findLTsafeDist(self,v_rd, v_k, rt_decel,c_style):
-        safeTime = 2
-        # its safe to get over if velocity of ego car is faster then rear car
-        relative_v = abs(v_k-v_rd)
-        safeDist = relative_v*safeTime
-
-        if self.isTracked: print(f'    Safe LT Distance {safeDist}')
-        return safeDist
+    
+    def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel, t_ldsafe, c_style):
+        """f.east 17
+        Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
+        From eq (16)
+        v_ld rear   vechicle in target lane speed before lane change
+        v_h ego     vechicles speed befor lane change
+        t_ldsafe    lead vehicle headway
+        cStyle      ego driving style
+        """
+        # avg paramters for drivers and vehicles
+        t_driver = 1.35 # driver's reaction time
+        t_brake = 0.15 # acting time of braking system
+        t_reaction = t_driver + t_brake
+        
+        
+        t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
+        t2 = c_style*v_h*t_ldsafe
+        delta_d_mldh = min(t1,t2)
+        return delta_d_mldh
     
     def findXOsafeDist(self, v_h, t_xosafe, c_style):
         """
@@ -401,31 +409,8 @@ class Vehicle:
         #t_xosafe safe time headway between ego and front/rear vehicle in original lane. 
         #t_xosafe = 2 # 2 seconds for good weather
         delta_d_xoh = c_style*v_h*t_xosafe
-        if self.isTracked: print(f'   XO Headway = {t_xosafe} XO Distance {delta_d_xoh}')
+        #if self.isTracked: print(f'   XO Headway = {t_xosafe} XO Distance {delta_d_xoh}')
         return delta_d_xoh
-    # def findLTsafeDist(self, v_ld, v_h, lt_decel, ego_decel,c_style):
-    #     """
-    #     Find the minimum safe distance between ego-vehicle and leader vehicle in target lane
-    #     From eq (16)
-    #     v_ld rear vechicle in target lane speed before lane change
-    #     v_h ego vechicles speed befor lane change
-    #     cStyle ego driving style
-    #     """
-    #     # avg paramters for drivers and vehicles
-    #     # some of these could come from v2v
-    #     # TODO these may be able to be pulled from car info
-    #     t_driver = 1.35 # driver's reaction time
-    #     t_brake = 0.15 # acting time of braking system
-    #     t_reaction = t_driver + t_brake
-
-    #     # TODO: read through paper more to figure out what these calues should be
-    #     t_ldsafe = 1.8 # rear vehicle time headway
-        
-    #     t1 = c_style*v_h*t_reaction+c_style*v_h**2/2*(ego_decel) -c_style*v_ld**2/(2*lt_decel)
-    #     t2 = c_style*v_h*t_ldsafe
-    #     delta_d_mldh = min(t1,t2)
-    #     return delta_d_mldh
-    
 
     def getNeighbors(self,traci):
         vehRO = traci.vehicle.getFollower(self.name) or ["",-1]

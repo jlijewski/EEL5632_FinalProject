@@ -9,19 +9,6 @@ class VehicleState(Enum):
     WaitingOnAck = 3
     ChangingLane = 4
 
-
-# class Packet:
-#     def __init__(self, sender, type, reportedSpeed, distance, accel=None, pos=None, lane=None):
-#         self.sender = sender
-#         # Type is R for request, A for Ack
-#         self.type = type
-#         self.speed = reportedSpeed
-#         self.distance = distance
-#         self.accel = accel
-#         self.pos = pos
-#         self.lane = lane
-
-
 # class Lanes(Enum):
 #     Zero = "E1_0"
 #     One = "E1_1"
@@ -188,8 +175,9 @@ class Vehicle:
 
             # Get far lane neighbors
             farNeighbors = self.getFarLaneNeighbors(traci)
-            if self.lyingFactor == 1:
-                traci.vehicle.highlight(self.name, color=(255, 0, 0))
+            if self.isTracked: traci.vehicle.highlight(self.name, color=(199, 77, 237)) 
+            # if self.lyingFactor == 1:
+            #     traci.vehicle.highlight(self.name, color=(255, 0, 0))
 
             """ Send a request packet for lane change to the neighbor vehicles. 
             Request packet wil be processed by neighbor vehicle and contains data to determine if gap is safe
@@ -203,7 +191,7 @@ class Vehicle:
                     reported_dist = dist #+ (self.lyingFactor * 30)
                     reported_accel = self.accel# - (self.lyingFactor * 10)
 
-                    pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, traci.vehicle.getTau(self.name), self.pos, self.lane)
+                    pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, traci.vehicle.getTau(self.name), self.pos, self.targetLane)
                     self.vehicle_requests[target_id].put(pkt)
                     if self.isTracked: print(f"SENT TO {target_id} {pkt}")
                     self.requestsSent += 1
@@ -250,7 +238,7 @@ class Vehicle:
         while not self.vehicle_requests[self.name].empty():
             # get the next packet in the queue
             packet = self.vehicle_requests[self.name].get_nowait()
-            
+            is_conflict = False
             # respond to packets requesting safe minimum distance
             # packet.[data] is from the car trying to get over, self.[data] is from a neighbor car
             if packet.type == "R":
@@ -272,33 +260,52 @@ class Vehicle:
                     # packet reponse is from original lane leader
                     safeDistance = self.findXOsafeDist(packet.speed, packet.headway, 1)
                 elif packet.neighbor == 4:
+                    # if far lane is not changing lane or changing into a different lane, get over
+                    if self.state != VehicleState.ChangingLane or (self.targetLane != packet.lane):
+                        safeDistance = 0
+                    elif packet.reportedGap < 0: 
+                        safeDistance = self.findRTsafeDist(packet.speed, self.speed, packet.decel, packet.headway, 1)
+                    elif packet.reportedGap > 0: 
+                        safeDistance = self.findLTsafeDist(packet.speed, self.speed, packet.decel, self.decel, packet.headway, 1) 
                     
+                    # if packet.lane and self.targetLane == packet.lane:
+                    #     else:
+                #         if abs(packet.reportedGap) < safeDistance:
+                #             is_conflict = True
+                # if (abs(packet.reportedGap) < safeDistance) and self.name > packet.sender:
+                #     safeDistCheck = False
+                if packet.reportedGap > abs(safeDistance):
+                    safeDistCheck = True
+                    
+                    
+                    '''
                     if (self.state in [VehicleState.SendingRequest, VehicleState.ChangingLane] and 
                         self.targetLane != 0 and 
-                        abs(self.lane - packet.lane) == 2):
-                        
+                    if abs(self.lane - packet.lane) == 2:
                         middle_lane = (self.lane + packet.lane) // 2
                         if self.targetLane == middle_lane:
-                            dist = packet.reportedGap
-                            other_speed = packet.speed
+                        dist = packet.reportedGap
+                        other_speed = packet.speed
+                        
+                        is_conflict = False
+                        if dist < 0: 
                             
-                            is_conflict = False
-                            if dist < 0: 
-                                
-                                safe_dist = self.findRTsafeDist(other_speed, self.speed, packet.decel, packet.headway, 1)
-                            else:
-                                
-                                safe_dist = self.findLTsafeDist(other_speed, self.speed, packet.decel, self.decel, packet.headway, 1) 
+                            safe_dist = self.findRTsafeDist(other_speed, self.speed, packet.decel, packet.headway, 1)
+                        else:
                             
-                            if abs(dist) < safe_dist:
-                                is_conflict = True
-                            
-                            
-                            if is_conflict and self.name > packet.sender:
-                                safeDistCheck = False
+                            safe_dist = self.findLTsafeDist(other_speed, self.speed, packet.decel, self.decel, packet.headway, 1) 
+                        
+                        if abs(dist) < safe_dist:
+                            is_conflict = True
+                        
+                        
+                        if is_conflict and self.name > packet.sender:
+                            safeDistCheck = False
+                
                     
                 if packet.reportedGap > safeDistance:
                     safeDistCheck = True
+                    '''
                 infoPacket = ReturnPacket(
                     sender=self.name,
                     neighbor = packet.neighbor,
@@ -311,21 +318,21 @@ class Vehicle:
                 self.vehicle_requests[packet.sender].put(infoPacket)
 
                 #print packet sent
-                if self.isTracked: print(f"SENT ACK: {infoPacket}")
+                #if self.isTracked: print(f"SENT ACK: {infoPacket}")
             
             elif packet.type == "A":
                 if self.state != VehicleState.WaitingOnAck:
                     # only accepts acks if wanting to change lanes, ignore during any other state
-                    if self.isTracked: print(f"ACK IGNORED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
+                    if self.isTracked: print(f"ACK IGNORED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}.")
                     self.ackCount = 0
                 elif packet.safeDistanceCheck:
                     self.ackCount += 1
-                    if self.isTracked: print(f"!! ACK CONFIRMED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent} safe gap {packet.safeDistance} vs repoted gap {packet.reportedGap}!!")
+                    if self.isTracked: print(f"!! ACK CONFIRMED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent} safe gap {packet.safeDistance:.2f} vs repoted gap {packet.reportedGap:.2f}!!")
                 else: 
-                    if self.isTracked: print(f"ACK DENIED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent}")
+                    if self.isTracked: print(f"ACK DENIED FROM {packet.sender} NEIGHBOR {packet.neighbor} ACK COUNT {self.ackCount} VS {self.requestsSent} REPORTED {packet.reportedGap:.2f} VS SAFE {packet.safeDistance:.2f}")
                     # if any gap is too small, then cancel requests
                     if packet.neighbor == 4:
-                        traci.vehicle.highlight(self.name, color=(255, 0, 0))
+                        # traci.vehicle.highlight(self.name, color=(255, 0, 0))
                         print(f"{self.name} aborting: far lane conflict.")
 
                     self.state = VehicleState.Idle

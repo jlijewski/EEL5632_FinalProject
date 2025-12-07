@@ -1,6 +1,6 @@
 from enum import Enum
 from queue import Queue
-
+import math
 
 class VehicleState(Enum):
 
@@ -27,7 +27,7 @@ Request Packet
                 0 = RT, 1 = LT, 2 = RO, 3 = LO, 4 = RF, 5 = LF
 '''
 class RequestPacket:
-    def __init__(self, sender, neighbor, state, reportedSpeed, reportedGap, accel=None, decel = None, headway=None, pos=None, lane=None):
+    def __init__(self, sender, neighbor, state, reportedSpeed, reportedGap, accel=None, decel = None, headway=None, pos=None, lane=None, distEgo2T = None):
         self.sender = sender
         # Type is R for request, A for Ack
         self.type = 'R'
@@ -40,8 +40,9 @@ class RequestPacket:
         self.headway = headway
         self.pos = pos
         self.lane = lane
+        self.distEgo2T = distEgo2T
     def __str__(self):
-        return f">>>>>>> Request Packet Sent to {self.neighbor}, reported at speed = {self.speed:.2f}, Gap = {self.reportedGap:.2f}, Headway = {self.headway:.2f} <<<<<<<<\n"
+        return f">>>>>>> Request Packet Sent to {self.neighbor}, reported at speed = {self.speed:.2f}, Gap = {self.reportedGap:.2f}, Headway = {self.headway:.2f}, Ego2T = {self.distEgo2T} <<<<<<<<\n"
 
 '''
 Return Packet   -   sent by car that is neighbor to car changing lanes
@@ -66,7 +67,7 @@ class Vehicle:
     vehicle_requests: dict[str, Queue] = {}
     vehicle_lying_factors: dict[str, int] = {}
 
-    def __init__(self, name, speed, accel, decel, pos, lane, lanePos, length, isHighlighted=False, lyingFactor=0):
+    def __init__(self, name, speed, accel, decel, pos, lane, lanePos, length, redundantCheck,  isHighlighted=False, lyingFactor=0):
         self.name = name
         self.speed = speed
         self.accel = accel
@@ -81,6 +82,7 @@ class Vehicle:
         self.delta_d_rt = 0 
         self.ackCount = 0
         self.requestsSent = 0
+        self.redundantCheck = redundantCheck
         self.isHighlighted = isHighlighted
         self.lyingFactor = lyingFactor # 0 for honest, 1 for lying
         self.vehicle_lying_factors[self.name] = self.lyingFactor
@@ -181,23 +183,30 @@ class Vehicle:
             if RT vehicle agrees, set its max headway and decel 
             """
             self.requestsSent = 0
-            def send_pkt(target_id, dist, neighbor):
+            def send_pkt(target_id, dist, distEgo2T, neighbor):
                 # Send packet only if there is a neigbor car of that type
                 if target_id:
                     reported_speed = self.speed #- (self.lyingFactor * 20)
                     reported_dist = dist #+ (self.lyingFactor * 30)
                     reported_accel = self.accel# - (self.lyingFactor * 10)
-
-                    pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, traci.vehicle.getTau(self.name), self.pos, self.lane)
+                    
+                    pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, traci.vehicle.getTau(self.name), self.pos, self.lane, distEgo2T)
                     self.vehicle_requests[target_id].put(pkt)
                     if self.isTracked: print(f"SENT TO {target_id} {pkt}")
                     self.requestsSent += 1
 
             # Packet request to target rear car
-            send_pkt(vehRT[0], vehRT[1], 0)
-            send_pkt(vehLT[0], vehLT[1], 1)
-            send_pkt(vehRO[0], vehRO[1], 2)
-            send_pkt(vehLO[0], vehLO[1], 3)
+            if self.redundantCheck:
+                ego2RT = vehRT[1] + self.length
+                ego2LT = vehLT[1] + self.length 
+                send_pkt(vehRT[0], vehRT[1], ego2LT,  0)
+                send_pkt(vehLT[0], vehLT[1], ego2RT, 1)
+                if self.isTracked: print(f"ego length = {abs(self.length)}")
+            else:
+                send_pkt(vehRT[0], vehRT[1], -1, 0)
+                send_pkt(vehLT[0], vehLT[1], -1, 1)
+            send_pkt(vehRO[0], vehRO[1], -1, 2)
+            send_pkt(vehLO[0], vehLO[1], -1, 3)
             self.state = VehicleState.WaitingOnAck
 
         elif self.state == VehicleState.WaitingOnAck:
@@ -243,10 +252,27 @@ class Vehicle:
                 # Determine which neighbor sent the request to determine which min safe gap calculation to use
                 if packet.neighbor == 0 and self.state != VehicleState.ChangingLane:
                     # Response from RT neighbor
+                    distRT2LT = traci.vehicle.getLeader(self.name) or ["",-1]
                     safeDistance = self.findRTsafeDist(self.speed, packet.speed, self.decel, packet.headway, 1)
+                    
+                    compareGap = packet.reportedGap - packet.distEgo2T
+                    if packet.distEgo2T != -1 and (not math.isclose(compareGap, packet.reportedGap, rel_tol=0.04)):
+                        safeDistance = float('inf')
+                        if self.isTracked: print(f")))))) Cancelled for mismatched distance reported gap {packet.reportedGap:.2f} vs actual {compareGap:.2f} Leader car is {distRT2LT[0]} and LT2RT is {distRT2LT[1]:.2f} and packet recieved {packet.distEgo2T:.2f}(((((((")
+                    elif(packet.distEgo2T != -1):
+                        if self.isTracked: print(f")))))) Distance check for redundancy {packet.reportedGap:.2f} vs actual {compareGap:.2f} Leader car is {distRT2LT[0]} and LT2RT is {distRT2LT[1]:.2f} and packet recieved {packet.distEgo2T:.2f}(((((((")
                     self.delta_d_rt = safeDistance
                 elif packet.neighbor == 1 and self.state != VehicleState.ChangingLane:
+                    distLT2RT = traci.vehicle.getFollower(self.name) or ["",-1]
                     safeDistance = self.findLTsafeDist(self.speed, packet.speed, self.decel, packet.decel, packet.headway, 1)
+
+                    compareGap = packet.reportedGap -   packet.distEgo2T
+                    if packet.distEgo2T != -1 and (not math.isclose(compareGap, packet.reportedGap, rel_tol=0.04)):
+                        safeDistance = float('inf')
+                        if self.isTracked: print(f"$$$$$$$$$$$ Cancelled for mismatched distance reported gap {packet.reportedGap:.2f} vs actual {compareGap:.2f} Leader car is {distLT2RT[0]} and LT2RT is {distLT2RT[1]:.2f} and packet recieved {packet.distEgo2T:.2f}$$$$$$$$$$$")
+                    elif packet.distEgo2T != -1:
+                        if self.isTracked: print(f"$$$$$$$$$$$ Distance Check for redundancy {packet.reportedGap:.2f} vs actual {compareGap:.2f} Leader car is {distLT2RT[0]} and LT2RT is {distLT2RT[1]:.2f} and packet recieved {packet.distEgo2T:.2f}$$$$$$$$$$$")
+
                     # TODO : could prevent emergency breaking or cancel lane change in case of emergency breaking
                 elif packet.neighbor == 2: 
                     # packet reponse is from original lane follower
@@ -256,7 +282,7 @@ class Vehicle:
                     safeDistance = self.findXOsafeDist(packet.speed, packet.headway, 1)
                 if packet.reportedGap > safeDistance:
                     safeDistCheck = True
-
+                    
                 infoPacket = ReturnPacket(
                     sender=self.name,
                     neighbor = packet.neighbor,

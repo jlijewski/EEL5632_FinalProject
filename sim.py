@@ -36,10 +36,10 @@ vehicle_speed = 0
 total_speed = 0
 LYING_ENABLED = False  
 LYING_CHANCE = 0.3   
-
+REDUNDANT_ENABLED = True
 # track a single vehicle throughout simulation. if None, a random car will be chosen
-tracked_vehicle_id = None
-highlighted_ids = ["f_east.2"]
+tracked_vehicle_id = "f_east.2"
+highlighted_ids = ["f_east.1"]
 # Metrics declaration
 departure_times = {}
 travel_times = []
@@ -77,6 +77,7 @@ try:
                 traci.vehicle.getLaneIndex(newVeh),
                 traci.vehicle.getLanePosition(newVeh),
                 traci.vehicle.getLength(newVeh),
+                redundantCheck = REDUNDANT_ENABLED,
                 isHighlighted = isHighlighted,
                 lyingFactor=lying_factor
             )

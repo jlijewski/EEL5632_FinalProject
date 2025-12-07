@@ -65,7 +65,7 @@ class Vehicle:
     vehicle_requests: dict[str, Queue] = {}
     vehicle_lying_factors: dict[str, int] = {}
 
-    def __init__(self, name, speed, accel, decel, pos, lane, lanePos, length, lyingFactor=0):
+    def __init__(self, name, speed, accel, decel, pos, lane, lanePos, length, isHighlighted =False,lyingFactor=0):
         self.name = name
         self.speed = speed
         self.accel = accel
@@ -80,6 +80,7 @@ class Vehicle:
         self.delta_d_rt = 0 
         self.ackCount = 0
         self.requestsSent = 0
+        self.isHighlighted = isHighlighted
         self.lyingFactor = lyingFactor # 0 for honest, 1 for lying
         self.vehicle_lying_factors[self.name] = self.lyingFactor
         self.isTracked = False 
@@ -103,7 +104,7 @@ class Vehicle:
             neighborList = self.getNeighbors(traci)
             for n in neighborList:
                 if n[0]:
-                    traci.vehicle.highlight(n[0], color=(39, 180, 190))
+                    #traci.vehicle.highlight(n[0], color=(39, 180, 190))
                     print(f"--- Neighbor: {n[0]} at dist {n[1]} ---\n")
 
     def update(self, traci):
@@ -115,6 +116,7 @@ class Vehicle:
         self.lanePos = traci.vehicle.getLanePosition(self.name)
         self.length = traci.vehicle.getLength(self.name)
         if self.isTracked == True: self.tracker(traci)
+        if self.isHighlighted: traci.vehicle.highlight(self.name, color=(243, 156, 18))
         """ avg paramters for drivers and vehicles
         TODO:
             some of these could be taken from v2v instead

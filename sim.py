@@ -38,8 +38,8 @@ LYING_ENABLED = False
 LYING_CHANCE = 0.3   
 
 # track a single vehicle throughout simulation. if None, a random car will be chosen
-tracked_vehicle_id = None
-
+tracked_vehicle_id = "f_east.7"
+highlighted_ids = ["f_east.9","f_east.15"]
 # Metrics declaration
 departure_times = {}
 travel_times = []
@@ -64,7 +64,9 @@ try:
             lying_factor = 0
             if LYING_ENABLED and random.random() < LYING_CHANCE:
                 lying_factor = 1
-
+            isHighlighted = False
+            if newVeh in highlighted_ids:
+                isHighlighted= True
             vehicles[newVeh] = Vehicle(
                 newVeh,
                 traci.vehicle.getSpeed(newVeh),
@@ -74,6 +76,7 @@ try:
                 traci.vehicle.getLaneIndex(newVeh),
                 traci.vehicle.getLanePosition(newVeh),
                 traci.vehicle.getLength(newVeh),
+                isHighlighted=isHighlighted,
                 lyingFactor=lying_factor
             )
             vehicles[newVeh].disableLaneSwitch(traci)

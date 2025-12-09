@@ -117,6 +117,7 @@ class Vehicle:
         self.length = traci.vehicle.getLength(self.name)
         if self.isTracked == True: self.tracker(traci)
         if self.isHighlighted: traci.vehicle.highlight(self.name, color=(243, 156, 18))
+        if self.lyingFactor==1: traci.vehicle.highlight(self.name, color=(243, 0,0))
         """ avg paramters for drivers and vehicles
         TODO:
             some of these could be taken from v2v instead
@@ -189,9 +190,9 @@ class Vehicle:
             def send_pkt(target_id, dist, neighbor):
                 # Send packet only if there is a neigbor car of that type
                 if target_id:
-                    reported_speed = self.speed #- (self.lyingFactor * 20)
-                    reported_dist = dist #+ (self.lyingFactor * 30)
-                    reported_accel = self.accel# - (self.lyingFactor * 10)
+                    reported_speed = self.speed - (self.lyingFactor * 20)
+                    reported_dist = dist + (self.lyingFactor * 30)
+                    reported_accel = self.accel - (self.lyingFactor * 10)
 
                     pkt = RequestPacket(self.name, neighbor, self.state, reported_speed, reported_dist, reported_accel, self.decel, traci.vehicle.getTau(self.name), self.pos, self.targetLane)
                     self.vehicle_requests[target_id].put(pkt)
